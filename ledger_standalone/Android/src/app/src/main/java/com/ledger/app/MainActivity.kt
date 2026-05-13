@@ -9,17 +9,21 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ledger.app.data.Model
 import com.ledger.app.db.LedgerRepository
 import com.ledger.app.ui.ledger.LedgerMainScreen
 import com.ledger.app.ui.ledger.LedgerTools
 import com.ledger.app.ui.modelsetup.ModelSetupScreen
+import com.ledger.app.ui.onboarding.OnboardingSheet
+import com.ledger.app.ui.onboarding.OnboardingViewModel
 import com.ledger.app.ui.theme.LedgerTheme
 import com.ledger.app.worker.DailyDigestScheduler
 import com.google.ai.edge.litertlm.ExperimentalApi
@@ -71,6 +75,12 @@ class MainActivity : ComponentActivity() {
               stateFlow = stateFlow,
               ledgerTools = ledgerTools,
             )
+          }
+
+          val onboardingVm: OnboardingViewModel = hiltViewModel()
+          val hasSeenOnboarding by onboardingVm.hasSeenOnboarding.collectAsState()
+          if (hasSeenOnboarding == false) {
+            OnboardingSheet(onDismiss = { onboardingVm.markSeen() })
           }
         }
       }
