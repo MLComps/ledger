@@ -1,64 +1,84 @@
 package com.ledger.app.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 
-private val Green800 = Color(0xFF1B5E20)
-private val Green600 = Color(0xFF388E3C)
-private val Green200 = Color(0xFFA5D6A7)
-private val Green50  = Color(0xFFE8F5E9)
-
+// ── Light palette ─────────────────────────────────────────────────────────────
+// Seed: deep forest teal-green #006B54 — trustworthy, growth, prosperity
 private val LightColors = lightColorScheme(
-  primary = Green600,
-  onPrimary = Color.White,
-  primaryContainer = Green50,
-  onPrimaryContainer = Green800,
-  secondary = Green800,
-  onSecondary = Color.White,
-  tertiary = Color(0xFF00695C),
-  onTertiary = Color.White,
-  tertiaryContainer = Color(0xFFB2DFDB),
-  onTertiaryContainer = Color(0xFF00251A),
+  primary                = Color(0xFF006B54),
+  onPrimary              = Color(0xFFFFFFFF),
+  primaryContainer       = Color(0xFF88FBCD),
+  onPrimaryContainer     = Color(0xFF00201A),
+  secondary              = Color(0xFF4C6359),
+  onSecondary            = Color(0xFFFFFFFF),
+  secondaryContainer     = Color(0xFFCEE9DC),
+  onSecondaryContainer   = Color(0xFF082018),
+  tertiary               = Color(0xFF3D6373),
+  onTertiary             = Color(0xFFFFFFFF),
+  tertiaryContainer      = Color(0xFFC1E8FA),
+  onTertiaryContainer    = Color(0xFF001F29),
+  error                  = Color(0xFFBA1A1A),
+  onError                = Color(0xFFFFFFFF),
+  errorContainer         = Color(0xFFFFDAD6),
+  onErrorContainer       = Color(0xFF410002),
+  background             = Color(0xFFF5FBF7),
+  onBackground           = Color(0xFF181D19),
+  surface                = Color(0xFFF5FBF7),
+  onSurface              = Color(0xFF181D19),
+  surfaceVariant         = Color(0xFFDCE5DC),
+  onSurfaceVariant       = Color(0xFF404943),
+  outline                = Color(0xFF707972),
+  outlineVariant         = Color(0xFFC0C9C1),
+  inverseSurface         = Color(0xFF2D322E),
+  inverseOnSurface       = Color(0xFFECF2ED),
+  inversePrimary         = Color(0xFF6CDEB6),
+  surfaceTint            = Color(0xFF006B54),
 )
 
+// ── Dark palette ──────────────────────────────────────────────────────────────
 private val DarkColors = darkColorScheme(
-  primary = Green200,
-  onPrimary = Color(0xFF003300),
-  primaryContainer = Green800,
-  onPrimaryContainer = Green50,
-  secondary = Green200,
-  onSecondary = Color(0xFF003300),
-  tertiary = Color(0xFF80CBC4),
-  onTertiary = Color(0xFF003731),
-  tertiaryContainer = Color(0xFF004D40),
-  onTertiaryContainer = Color(0xFFB2DFDB),
+  primary                = Color(0xFF6CDEB6),
+  onPrimary              = Color(0xFF00382B),
+  primaryContainer       = Color(0xFF005140),
+  onPrimaryContainer     = Color(0xFF88FBCD),
+  secondary              = Color(0xFFB2CCBF),
+  onSecondary            = Color(0xFF1E352A),
+  secondaryContainer     = Color(0xFF354B40),
+  onSecondaryContainer   = Color(0xFFCEE9DC),
+  tertiary               = Color(0xFFA5CCE0),
+  onTertiary             = Color(0xFF063444),
+  tertiaryContainer      = Color(0xFF234B5A),
+  onTertiaryContainer    = Color(0xFFC1E8FA),
+  error                  = Color(0xFFFFB4AB),
+  onError                = Color(0xFF690005),
+  errorContainer         = Color(0xFF93000A),
+  onErrorContainer       = Color(0xFFFFDAD6),
+  background             = Color(0xFF0F1511),
+  onBackground           = Color(0xFFE1E4DF),
+  surface                = Color(0xFF0F1511),
+  onSurface              = Color(0xFFE1E4DF),
+  surfaceVariant         = Color(0xFF3C4540),
+  onSurfaceVariant       = Color(0xFFBCC5BB),
+  outline                = Color(0xFF869186),
+  outlineVariant         = Color(0xFF3C4540),
+  inverseSurface         = Color(0xFFE1E4DF),
+  inverseOnSurface       = Color(0xFF2D322E),
+  inversePrimary         = Color(0xFF006B54),
+  surfaceTint            = Color(0xFF6CDEB6),
 )
 
 @Composable
 fun LedgerTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  dynamicColor: Boolean = true,
   content: @Composable () -> Unit,
 ) {
-  val colorScheme = when {
-    dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-      val context = LocalContext.current
-      if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    }
-    darkTheme -> DarkColors
-    else -> LightColors
-  }
-
   MaterialTheme(
-    colorScheme = colorScheme,
+    colorScheme = if (darkTheme) DarkColors else LightColors,
     typography = LedgerTypography,
     content = content,
   )

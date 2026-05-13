@@ -2,9 +2,19 @@ package com.ledger.app.ui.modelsetup
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,22 +24,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Login
-import androidx.compose.material.icons.rounded.Logout
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,16 +52,26 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ledger.app.data.Model
@@ -63,7 +86,6 @@ fun ModelSetupScreen(
   viewModel: ModelSetupViewModel = hiltViewModel(),
 ) {
   val uiState by viewModel.uiState.collectAsState()
-  val tintColor = MaterialTheme.colorScheme.primary
   val snackbarHostState = remember { SnackbarHostState() }
   val scope = rememberCoroutineScope()
 
@@ -71,94 +93,71 @@ fun ModelSetupScreen(
     contract = ActivityResultContracts.StartActivityForResult(),
   ) { result ->
     viewModel.handleAuthResult(result) { success, error ->
-      if (!success) {
-        scope.launch {
-          snackbarHostState.showSnackbar(error ?: "HuggingFace login failed")
-        }
-      }
+      if (!success) scope.launch { snackbarHostState.showSnackbar(error ?: "Login failed") }
     }
   }
 
   Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { innerPadding ->
-    Column(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(innerPadding)
-        .padding(horizontal = 24.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
+    LazyColumn(
+      modifier = Modifier.fillMaxSize().padding(innerPadding),
+      contentPadding = PaddingValues(bottom = 32.dp),
     ) {
-      Spacer(modifier = Modifier.height(48.dp))
+      item {
+        HeroSection()
+      }
 
-      Icon(
-        imageVector = Icons.Rounded.AccountBalanceWallet,
-        contentDescription = "Ledger",
-        tint = tintColor,
-        modifier = Modifier.size(72.dp),
-      )
-
-      Spacer(modifier = Modifier.height(16.dp))
-
-      Text(
-        text = "Ledger",
-        style = MaterialTheme.typography.headlineLarge,
-        fontWeight = FontWeight.Bold,
-        color = tintColor,
-      )
-
-      Spacer(modifier = Modifier.height(8.dp))
-
-      Text(
-        text = "Your offline AI financial assistant",
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-
-      Spacer(modifier = Modifier.height(32.dp))
-
-      HuggingFaceLoginCard(
-        loggedIn = uiState.hfLoggedIn,
-        tokenExpired = uiState.hfTokenExpired,
-        onLogin = {
-          val intent = viewModel.authService.getAuthorizationRequestIntent(
-            viewModel.getAuthorizationRequest()
+      item {
+        Column(modifier = Modifier.padding(horizontal = 20.dp)) {
+          Spacer(Modifier.height(24.dp))
+          Text(
+            "Choose a model",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
           )
-          authResultLauncher.launch(intent)
-        },
-        onLogout = { viewModel.logout() },
-      )
-
-      Spacer(modifier = Modifier.height(24.dp))
-
-      Text(
-        text = "Select a model to get started",
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.fillMaxWidth(),
-      )
-
-      Spacer(modifier = Modifier.height(16.dp))
+          Text(
+            "Download once, runs fully offline",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Spacer(Modifier.height(16.dp))
+        }
+      }
 
       when {
-        uiState.loading -> {
-          Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = tintColor)
+        uiState.loading -> item {
+          Box(
+            modifier = Modifier.fillMaxWidth().padding(48.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            CircularProgressIndicator(
+              color = MaterialTheme.colorScheme.primary,
+              strokeWidth = 3.dp,
+              modifier = Modifier.size(36.dp),
+            )
           }
         }
-        uiState.error.isNotEmpty() -> {
-          Text(
-            text = uiState.error,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
-          )
-          Spacer(modifier = Modifier.height(16.dp))
-          Button(onClick = { viewModel.loadModels() }) {
-            Text("Retry")
+        uiState.error.isNotEmpty() -> item {
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+          ) {
+            Text(uiState.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = { viewModel.loadModels() }) { Text("Retry") }
           }
         }
-        else -> {
-          LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(uiState.models) { model ->
-              val status = uiState.downloadStatus[model.name]
-                ?: ModelDownloadStatus(status = ModelDownloadStatusType.NOT_DOWNLOADED)
+        else -> itemsIndexed(uiState.models) { index, model ->
+          val status = uiState.downloadStatus[model.name]
+            ?: ModelDownloadStatus(status = ModelDownloadStatusType.NOT_DOWNLOADED)
+          var visible by remember { mutableStateOf(false) }
+          LaunchedEffect(model.name) { visible = true }
+          AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(220, delayMillis = index * 80)) +
+              slideInVertically(tween(220, delayMillis = index * 80)) { it / 3 },
+          ) {
+            Box(modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)) {
               ModelCard(
                 model = model,
                 downloadStatus = status,
@@ -178,95 +177,103 @@ fun ModelSetupScreen(
 }
 
 @Composable
-private fun HuggingFaceLoginCard(
-  loggedIn: Boolean,
-  tokenExpired: Boolean,
-  onLogin: () -> Unit,
-  onLogout: () -> Unit,
-) {
-  val tintColor = MaterialTheme.colorScheme.primary
+private fun HeroSection() {
+  var entered by remember { mutableStateOf(false) }
+  LaunchedEffect(Unit) { entered = true }
 
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(
-      containerColor = if (loggedIn)
-        MaterialTheme.colorScheme.primaryContainer
-      else
-        MaterialTheme.colorScheme.surfaceVariant,
-    ),
-  ) {
-    Row(
-      modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      if (loggedIn) {
-        Icon(
-          imageVector = Icons.Rounded.CheckCircle,
-          contentDescription = null,
-          tint = tintColor,
-          modifier = Modifier.size(20.dp),
+  val iconScale by animateFloatAsState(
+    targetValue = if (entered) 1f else 0.5f,
+    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+    label = "icon_scale",
+  )
+  val textAlpha by animateFloatAsState(
+    targetValue = if (entered) 1f else 0f,
+    animationSpec = tween(500, delayMillis = 150, easing = FastOutSlowInEasing),
+    label = "text_alpha",
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(
+        Brush.verticalGradient(
+          colors = listOf(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+            MaterialTheme.colorScheme.background,
+          ),
+          startY = 0f,
+          endY = Float.POSITIVE_INFINITY,
         )
-        Spacer(modifier = Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = "HuggingFace account linked",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-          )
-          Text(
-            text = "Gated models can be downloaded",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-          )
-        }
-        TextButton(onClick = onLogout) {
-          Icon(
-            imageVector = Icons.Rounded.Logout,
-            contentDescription = "Logout",
-            modifier = Modifier.size(16.dp),
-          )
-          Spacer(modifier = Modifier.width(4.dp))
-          Text("Logout")
-        }
-      } else {
-        if (tokenExpired) {
-          Icon(
-            imageVector = Icons.Rounded.Warning,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.error,
-            modifier = Modifier.size(20.dp),
-          )
-          Spacer(modifier = Modifier.width(10.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = if (tokenExpired) "Session expired" else "Optional: HuggingFace login",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-          )
-          Text(
-            text = if (tokenExpired)
-              "Re-login to continue downloading gated models"
-            else
-              "Required only for gated (private) models",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-        TextButton(onClick = onLogin) {
-          Icon(
-            imageVector = Icons.Rounded.Login,
-            contentDescription = "Login",
-            modifier = Modifier.size(16.dp),
-          )
-          Spacer(modifier = Modifier.width(4.dp))
-          Text(if (tokenExpired) "Re-login" else "Login")
-        }
+      )
+      .padding(horizontal = 24.dp, vertical = 48.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Column(
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      // Animated icon badge
+      Box(
+        modifier = Modifier
+          .scale(iconScale)
+          .size(88.dp)
+          .clip(RoundedCornerShape(24.dp))
+          .background(Color.White.copy(alpha = 0.18f)),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          Icons.AutoMirrored.Rounded.TrendingUp,
+          contentDescription = null,
+          modifier = Modifier.size(48.dp),
+          tint = Color.White,
+        )
+      }
+
+      Spacer(Modifier.height(4.dp))
+
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.graphicsAlpha(textAlpha),
+      ) {
+        Text(
+          "Ledger",
+          style = MaterialTheme.typography.displaySmall,
+          fontWeight = FontWeight.ExtraBold,
+          color = Color.White,
+        )
+        Text(
+          "AI Bookkeeping · 100% Offline",
+          style = MaterialTheme.typography.bodyMedium,
+          color = Color.White.copy(alpha = 0.80f),
+          textAlign = TextAlign.Center,
+        )
+      }
+
+      Spacer(Modifier.height(4.dp))
+
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FeaturePill("Voice")
+        FeaturePill("Camera")
+        FeaturePill("SMS")
       }
     }
   }
 }
+
+@Composable
+private fun FeaturePill(label: String) {
+  Box(
+    modifier = Modifier
+      .clip(CircleShape)
+      .background(Color.White.copy(alpha = 0.20f))
+      .padding(horizontal = 14.dp, vertical = 5.dp),
+  ) {
+    Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.SemiBold)
+  }
+}
+
+private fun Modifier.graphicsAlpha(a: Float): Modifier = this.alpha(a)
 
 @Composable
 private fun ModelCard(
@@ -279,107 +286,120 @@ private fun ModelCard(
   onDelete: () -> Unit,
   onStart: () -> Unit,
 ) {
-  val tintColor = MaterialTheme.colorScheme.primary
+  val isReady = downloadStatus.status == ModelDownloadStatusType.SUCCEEDED
 
-  Card(
+  ElevatedCard(
     modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    shape = RoundedCornerShape(20.dp),
+    colors = CardDefaults.elevatedCardColors(
+      containerColor = if (isReady) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+      else MaterialTheme.colorScheme.surfaceVariant,
+    ),
+    elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (isReady) 3.dp else 1.dp),
   ) {
-    Column(modifier = Modifier.padding(16.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier = Modifier.padding(18.dp)) {
+
+      // Header row: name + size + capability chips + delete
+      Row(verticalAlignment = Alignment.Top) {
         Column(modifier = Modifier.weight(1f)) {
           Text(
-            text = model.name,
+            model.name,
             style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
           )
           Text(
-            text = formatBytes(model.sizeInBytes),
+            formatBytes(model.sizeInBytes),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          Spacer(Modifier.height(6.dp))
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (model.llmSupportImage == true) {
+              CapabilityChip(Icons.Rounded.Image, "Vision")
+            }
+            if (model.llmSupportAudio == true) {
+              CapabilityChip(Icons.Rounded.Audiotrack, "Audio")
+            }
+            CapabilityChip(Icons.Rounded.Memory, "On-device")
+          }
         }
 
-        when (downloadStatus.status) {
-          ModelDownloadStatusType.SUCCEEDED -> {
-            IconButton(onClick = onDelete) {
-              Icon(
-                imageVector = Icons.Rounded.Delete,
-                contentDescription = "Delete",
-                tint = MaterialTheme.colorScheme.error,
-              )
-            }
+        if (isReady) {
+          IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+            Icon(Icons.Rounded.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
           }
-          else -> {}
         }
       }
 
       if (model.info.isNotEmpty()) {
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
-          text = model.info,
+          model.info,
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           maxLines = 2,
         )
       }
 
-      Spacer(modifier = Modifier.height(12.dp))
+      Spacer(Modifier.height(14.dp))
 
       when (downloadStatus.status) {
         ModelDownloadStatusType.NOT_DOWNLOADED -> {
           Button(
             onClick = onDownload,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = tintColor),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
           ) {
-            Icon(imageVector = Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Download")
+            Icon(Icons.Rounded.CloudDownload, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Download  ·  ${formatBytes(model.sizeInBytes)}", fontWeight = FontWeight.SemiBold)
           }
         }
 
         ModelDownloadStatusType.FAILED -> {
           Text(
-            text = "Download failed: ${downloadStatus.errorMessage.ifEmpty { "Unknown error" }}",
+            "Download failed: ${downloadStatus.errorMessage.ifEmpty { "Unknown error" }}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
           )
-          Spacer(modifier = Modifier.height(6.dp))
+          Spacer(Modifier.height(8.dp))
           Button(
             onClick = onDownload,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = tintColor),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
           ) {
-            Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Retry")
+            Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Retry", fontWeight = FontWeight.SemiBold)
           }
         }
 
         ModelDownloadStatusType.PARTIALLY_DOWNLOADED -> {
           val progress = if (downloadStatus.totalBytes > 0)
             downloadStatus.receivedBytes.toFloat() / downloadStatus.totalBytes else 0f
-          val received = formatBytes(downloadStatus.receivedBytes)
-          val total = formatBytes(downloadStatus.totalBytes)
           Text(
-            text = "Incomplete download: $received / $total — tap Resume to continue",
+            "Incomplete — ${formatBytes(downloadStatus.receivedBytes)} / ${formatBytes(downloadStatus.totalBytes)}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
-          Spacer(modifier = Modifier.height(4.dp))
-          LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth(), color = tintColor)
-          Spacer(modifier = Modifier.height(8.dp))
+          Spacer(Modifier.height(6.dp))
+          LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth().clip(CircleShape).height(5.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+          )
+          Spacer(Modifier.height(10.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onDiscard, modifier = Modifier.weight(1f)) { Text("Discard") }
-            Button(
-              onClick = onResume,
-              modifier = Modifier.weight(1f),
-              colors = ButtonDefaults.buttonColors(containerColor = tintColor),
-            ) {
-              Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(modifier = Modifier.width(4.dp))
-              Text("Resume")
+            OutlinedButton(onClick = onDiscard, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) { Text("Discard") }
+            Button(onClick = onResume, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp),
+              colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
+              Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(4.dp))
+              Text("Resume", fontWeight = FontWeight.SemiBold)
             }
           }
         }
@@ -390,55 +410,35 @@ private fun ModelCard(
             downloadStatus.receivedBytes.toFloat() / downloadStatus.totalBytes else 0f
           val received = formatBytes(downloadStatus.receivedBytes)
           val total = formatBytes(downloadStatus.totalBytes)
-          val speedLabel = if (downloadStatus.bytesPerSecond > 0)
-            "  •  ${formatBytes(downloadStatus.bytesPerSecond)}/s" else ""
-          val etaLabel = if (downloadStatus.remainingMs > 0)
-            "  •  ${formatEta(downloadStatus.remainingMs)}" else ""
-
-          if (downloadStatus.status == ModelDownloadStatusType.UNZIPPING) {
-            Text(text = "Extracting...", style = MaterialTheme.typography.bodySmall)
-          } else {
-            Text(
-              text = "Downloading  $received / $total$speedLabel$etaLabel",
-              style = MaterialTheme.typography.bodySmall,
-            )
-          }
-          Spacer(modifier = Modifier.height(4.dp))
+          val speedLabel = if (downloadStatus.bytesPerSecond > 0) "  ·  ${formatBytes(downloadStatus.bytesPerSecond)}/s" else ""
+          val etaLabel = if (downloadStatus.remainingMs > 0) "  ·  ${formatEta(downloadStatus.remainingMs)}" else ""
+          Text(
+            if (downloadStatus.status == ModelDownloadStatusType.UNZIPPING) "Extracting…"
+            else "$received / $total$speedLabel$etaLabel",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Spacer(Modifier.height(6.dp))
           LinearProgressIndicator(
             progress = { progress },
-            modifier = Modifier.fillMaxWidth(),
-            color = tintColor,
+            modifier = Modifier.fillMaxWidth().clip(CircleShape).height(5.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
           )
-          Spacer(modifier = Modifier.height(8.dp))
-          OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
-            Text("Cancel")
-          }
+          Spacer(Modifier.height(10.dp))
+          OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Cancel") }
         }
 
         ModelDownloadStatusType.SUCCEEDED -> {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 8.dp),
-          ) {
-            Icon(
-              imageVector = Icons.Rounded.CheckCircle,
-              contentDescription = null,
-              tint = tintColor,
-              modifier = Modifier.size(16.dp),
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-              text = "Ready",
-              style = MaterialTheme.typography.bodySmall,
-              color = tintColor,
-            )
-          }
           Button(
             onClick = onStart,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = tintColor),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
           ) {
-            Text("Start Ledger")
+            Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Start Ledger", fontWeight = FontWeight.Bold)
           }
         }
       }
@@ -446,13 +446,28 @@ private fun ModelCard(
   }
 }
 
-private fun formatBytes(bytes: Long): String {
-  return when {
-    bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)
-    bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
-    bytes >= 1_000L -> "%.1f KB".format(bytes / 1_000.0)
-    else -> "$bytes B"
-  }
+@Composable
+private fun CapabilityChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+  SuggestionChip(
+    onClick = {},
+    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+    icon = { Icon(icon, contentDescription = null, modifier = Modifier.size(12.dp)) },
+    shape = CircleShape,
+    colors = SuggestionChipDefaults.suggestionChipColors(
+      containerColor = MaterialTheme.colorScheme.surface,
+    ),
+    border = SuggestionChipDefaults.suggestionChipBorder(
+      enabled = true,
+      borderColor = MaterialTheme.colorScheme.outlineVariant,
+    ),
+  )
+}
+
+private fun formatBytes(bytes: Long): String = when {
+  bytes >= 1_000_000_000L -> "%.1f GB".format(bytes / 1_000_000_000.0)
+  bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
+  bytes >= 1_000L -> "%.1f KB".format(bytes / 1_000.0)
+  else -> "$bytes B"
 }
 
 private fun formatEta(remainingMs: Long): String {

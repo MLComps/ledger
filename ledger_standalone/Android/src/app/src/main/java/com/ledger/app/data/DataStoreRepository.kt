@@ -8,7 +8,9 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ledger_settings")
@@ -18,6 +20,7 @@ interface DataStoreRepository {
   fun readTextInputHistory(): List<String>
   fun saveCurrencyCode(code: String)
   fun readCurrencyCode(): String
+  fun currencyCodeFlow(): Flow<String>
   fun saveHasSeenOnboarding(seen: Boolean)
   fun readHasSeenOnboarding(): Boolean
   fun saveHfAccessToken(token: String, expiresAt: Long)
@@ -61,6 +64,9 @@ class DefaultDataStoreRepository(private val context: Context) : DataStoreReposi
       context.dataStore.data.first()[KEY_CURRENCY_CODE] ?: "KES"
     }
   }
+
+  override fun currencyCodeFlow(): Flow<String> =
+    context.dataStore.data.map { it[KEY_CURRENCY_CODE] ?: "KES" }
 
   override fun saveHasSeenOnboarding(seen: Boolean) {
     runBlocking {

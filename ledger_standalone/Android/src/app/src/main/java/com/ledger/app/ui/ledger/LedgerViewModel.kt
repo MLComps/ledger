@@ -116,6 +116,11 @@ constructor(
         validationMode = dataStoreRepository.readValidationMode(),
       )
     }
+    viewModelScope.launch {
+      dataStoreRepository.currencyCodeFlow().collect { code ->
+        _uiState.update { it.copy(selectedCurrency = code) }
+      }
+    }
   }
 
   fun syncFromTools(tools: LedgerTools) {

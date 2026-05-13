@@ -4,16 +4,31 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+  <!-- Bold "L" letterform — vertical stroke + horizontal stroke -->
   <path
       android:fillColor="#FFFFFFFF"
-      android:pathData="M34,26 L74,26 C76.2,26 78,27.8 78,30 L78,78 C78,80.2 76.2,82 74,82 L34,82 C31.8,82 30,80.2 30,78 L30,30 C30,27.8 31.8,26 34,26 Z" />
+      android:pathData="M32,22 L44,22 L44,76 L78,76 L78,88 L32,88 Z" />
+
+  <!-- Three ledger lines filling the counter of the L -->
+  <!-- Each line is a rounded-end rectangle representing a journal entry -->
   <path
-      android:fillColor="#FF388E3C"
-      android:pathData="M38,40 L70,40 L70,44 L38,44 Z" />
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M50,34 Q51,34 51,35 L51,39 Q51,40 50,40 L76,40 Q77,40 77,39 L77,35 Q77,34 76,34 Z" />
   <path
-      android:fillColor="#FF388E3C"
-      android:pathData="M38,50 L70,50 L70,54 L38,54 Z" />
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M50,46 L76,46 L76,50 L50,50 Z" />
   <path
-      android:fillColor="#FF388E3C"
-      android:pathData="M38,60 L58,60 L58,64 L38,64 Z" />
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M50,58 L68,58 L68,62 L50,62 Z" />
+
+  <!-- Small upward-trending spark in bottom-right corner of counter -->
+  <path
+      android:strokeColor="#FFFFFFFF"
+      android:strokeWidth="3"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:fillColor="@android:color/transparent"
+      android:pathData="M66,70 L70,64 L74,68 L78,60" />
+
 </vector>
