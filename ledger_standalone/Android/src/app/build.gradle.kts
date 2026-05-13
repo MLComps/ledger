@@ -26,24 +26,35 @@ android {
     versionCode = 1
     versionName = "1.0.0"
 
-    val redirectScheme = localProps.getProperty("REDIRECT_URL_SCHEME", "com.ledger.app")
-    manifestPlaceholders["appAuthRedirectScheme"] = redirectScheme
     manifestPlaceholders["applicationName"] = "com.ledger.app.LedgerApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
 
     buildConfigField("String", "HF_TOKEN", "\"${localProps.getProperty("HF_TOKEN", "")}\"")
-    buildConfigField("String", "REDIRECT_URL_SCHEME", "\"$redirectScheme\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   buildTypes {
     release {
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("debug")
     }
+    debug {
+      versionNameSuffix = "-debug"
+    }
   }
+
+  splits {
+    abi {
+      isEnable = true
+      reset()
+      include("arm64-v8a", "x86_64")
+      isUniversalApk = false
+    }
+  }
+
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
@@ -78,7 +89,6 @@ dependencies {
   implementation(libs.camerax.camera2)
   implementation(libs.camerax.lifecycle)
   implementation(libs.camerax.view)
-  implementation(libs.openid.appauth)
   implementation(libs.hilt.android)
   implementation(libs.hilt.navigation.compose)
   implementation(libs.androidx.exifinterface)

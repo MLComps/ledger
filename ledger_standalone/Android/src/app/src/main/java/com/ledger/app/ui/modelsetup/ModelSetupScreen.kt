@@ -18,6 +18,8 @@ import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -122,7 +124,9 @@ fun ModelSetupScreen(
                 model = model,
                 downloadStatus = status,
                 onDownload = { viewModel.downloadModel(model) },
+                onResume = { viewModel.downloadModel(model) },
                 onCancel = { viewModel.cancelDownload(model) },
+                onDiscard = { viewModel.discardPartialDownload(model) },
                 onDelete = { viewModel.deleteModel(model) },
                 onStart = { onModelReady(model) },
               )
@@ -139,7 +143,9 @@ private fun ModelCard(
   model: Model,
   downloadStatus: ModelDownloadStatus,
   onDownload: () -> Unit,
+  onResume: () -> Unit,
   onCancel: () -> Unit,
+  onDiscard: () -> Unit,
   onDelete: () -> Unit,
   onStart: () -> Unit,
 ) {
@@ -191,43 +197,82 @@ private fun ModelCard(
       Spacer(modifier = Modifier.height(12.dp))
 
       when (downloadStatus.status) {
-        ModelDownloadStatusType.NOT_DOWNLOADED, ModelDownloadStatusType.FAILED -> {
-          if (downloadStatus.status == ModelDownloadStatusType.FAILED) {
-            Text(
-              text = "Download failed. Tap to retry.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.error,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-          }
+        ModelDownloadStatusType.NOT_DOWNLOADED -> {
           Button(
             onClick = onDownload,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = tintColor),
           ) {
-            Icon(
-              imageVector = Icons.Rounded.CloudDownload,
-              contentDescription = null,
-              modifier = Modifier.size(18.dp),
-            )
+            Icon(imageVector = Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
             Text("Download")
           }
         }
 
-        ModelDownloadStatusType.IN_PROGRESS,
-        ModelDownloadStatusType.PARTIALLY_DOWNLOADED,
-        ModelDownloadStatusType.UNZIPPING -> {
-          val progress = if (downloadStatus.totalBytes > 0) {
-            downloadStatus.receivedBytes.toFloat() / downloadStatus.totalBytes
-          } else 0f
+        ModelDownloadStatusType.FAILED -> {
+          Text(
+            text = "Download failed: ${downloadStatus.errorMessage.ifEmpty { "Unknown error" }}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+          )
+          Spacer(modifier = Modifier.height(6.dp))
+          Button(
+            onClick = onDownload,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = tintColor),
+          ) {
+            Icon(imageVector = Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Retry")
+          }
+        }
+
+        ModelDownloadStatusType.PARTIALLY_DOWNLOADED -> {
+          val progress = if (downloadStatus.totalBytes > 0)
+            downloadStatus.receivedBytes.toFloat() / downloadStatus.totalBytes else 0f
           val received = formatBytes(downloadStatus.receivedBytes)
           val total = formatBytes(downloadStatus.totalBytes)
-
           Text(
-            text = "Downloading... $received / $total",
+            text = "Incomplete download: $received / $total — tap Resume to continue",
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          Spacer(modifier = Modifier.height(4.dp))
+          LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth(), color = tintColor)
+          Spacer(modifier = Modifier.height(8.dp))
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onDiscard, modifier = Modifier.weight(1f)) { Text("Discard") }
+            Button(
+              onClick = onResume,
+              modifier = Modifier.weight(1f),
+              colors = ButtonDefaults.buttonColors(containerColor = tintColor),
+            ) {
+              Icon(imageVector = Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(modifier = Modifier.width(4.dp))
+              Text("Resume")
+            }
+          }
+        }
+
+        ModelDownloadStatusType.IN_PROGRESS,
+        ModelDownloadStatusType.UNZIPPING -> {
+          val progress = if (downloadStatus.totalBytes > 0)
+            downloadStatus.receivedBytes.toFloat() / downloadStatus.totalBytes else 0f
+          val received = formatBytes(downloadStatus.receivedBytes)
+          val total = formatBytes(downloadStatus.totalBytes)
+          val speedLabel = if (downloadStatus.bytesPerSecond > 0)
+            "  •  ${formatBytes(downloadStatus.bytesPerSecond)}/s" else ""
+          val etaLabel = if (downloadStatus.remainingMs > 0)
+            "  •  ${formatEta(downloadStatus.remainingMs)}" else ""
+
+          if (downloadStatus.status == ModelDownloadStatusType.UNZIPPING) {
+            Text(text = "Extracting...", style = MaterialTheme.typography.bodySmall)
+          } else {
+            Text(
+              text = "Downloading  $received / $total$speedLabel$etaLabel",
+              style = MaterialTheme.typography.bodySmall,
+            )
+          }
           Spacer(modifier = Modifier.height(4.dp))
           LinearProgressIndicator(
             progress = { progress },
@@ -277,5 +322,14 @@ private fun formatBytes(bytes: Long): String {
     bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
     bytes >= 1_000L -> "%.1f KB".format(bytes / 1_000.0)
     else -> "$bytes B"
+  }
+}
+
+private fun formatEta(remainingMs: Long): String {
+  val totalSec = remainingMs / 1000
+  return when {
+    totalSec >= 3600 -> "${totalSec / 3600}h ${(totalSec % 3600) / 60}m"
+    totalSec >= 60 -> "${totalSec / 60}m ${totalSec % 60}s"
+    else -> "${totalSec}s"
   }
 }

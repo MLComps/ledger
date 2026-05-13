@@ -95,6 +95,16 @@ constructor(
     setDownloadStatus(model, ModelDownloadStatus(status = ModelDownloadStatusType.NOT_DOWNLOADED))
   }
 
+  fun discardPartialDownload(model: Model) {
+    val tmpFile = File(
+      externalFilesDir,
+      listOf(model.normalizedName, model.version, "${model.downloadFileName}.$TMP_FILE_EXT")
+        .joinToString(File.separator),
+    )
+    if (tmpFile.exists()) tmpFile.delete()
+    setDownloadStatus(model, ModelDownloadStatus(status = ModelDownloadStatusType.NOT_DOWNLOADED))
+  }
+
   fun isModelDownloaded(model: Model): Boolean {
     val modelRelativePath = listOf(model.normalizedName, model.version, model.downloadFileName)
       .joinToString(File.separator)
