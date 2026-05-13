@@ -57,6 +57,8 @@ import androidx.compose.material.icons.rounded.Receipt
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.StopCircle
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
@@ -851,6 +853,8 @@ private fun LedgerDashboard(
 ) {
   var expanded by remember { mutableStateOf<DashboardSection?>(null) }
   var showCurrencyPicker by remember { mutableStateOf(false) }
+  var numbersHidden by remember { mutableStateOf(false) }
+  val mask = "••••"
 
   if (showCurrencyPicker) {
     AlertDialog(
@@ -907,17 +911,23 @@ private fun LedgerDashboard(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
-          SummaryMetric(label = "Revenue", value = formatAmount(uiState.revenue))
-          SummaryMetric(label = "Cost", value = formatAmount(uiState.totalCost))
+          SummaryMetric(
+            label = "Revenue",
+            value = if (numbersHidden) mask else formatAmount(uiState.revenue),
+          )
+          SummaryMetric(
+            label = "Cost",
+            value = if (numbersHidden) mask else formatAmount(uiState.totalCost),
+          )
           SummaryMetric(
             label = "Profit",
-            value = formatAmount(uiState.netProfit),
-            valueColor = when {
+            value = if (numbersHidden) mask else formatAmount(uiState.netProfit),
+            valueColor = if (numbersHidden) MaterialTheme.colorScheme.onSurfaceVariant else when {
               uiState.netProfit > 0 -> Color(0xFF2E7D32)
               uiState.netProfit < 0 -> Color(0xFFC62828)
               else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
-            trailingIcon = when {
+            trailingIcon = if (numbersHidden) null else when {
               uiState.netProfit > 0 -> {
                 { Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(14.dp), tint = Color(0xFF2E7D32)) }
               }
@@ -928,6 +938,18 @@ private fun LedgerDashboard(
             },
           )
           SummaryMetric(label = "Txns", value = uiState.transactionCount.toString())
+        }
+        IconButton(
+          onClick = { numbersHidden = !numbersHidden },
+          modifier = Modifier.size(36.dp),
+          colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Transparent),
+        ) {
+          Icon(
+            if (numbersHidden) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+            contentDescription = if (numbersHidden) "Show amounts" else "Hide amounts",
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (numbersHidden) 1f else 0.5f),
+          )
         }
         TextButton(
           onClick = { showCurrencyPicker = true },
@@ -1030,7 +1052,7 @@ private fun LedgerDashboard(
           Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
             when (expanded) {
-              DashboardSection.TRANSACTIONS -> TransactionSection(uiState, onDeleteTransaction)
+              DashboardSection.TRANSACTIONS -> TransactionSection(uiState, onDeleteTransaction, numbersHidden)
               DashboardSection.INVENTORY -> InventorySection(uiState)
               null -> {}
             }
@@ -1227,7 +1249,7 @@ private fun SectionToggle(
 }
 
 @Composable
-private fun TransactionSection(uiState: LedgerUiState, onDelete: (Long) -> Unit) {
+private fun TransactionSection(uiState: LedgerUiState, onDelete: (Long) -> Unit, numbersHidden: Boolean = false) {
   var editMode by remember { mutableStateOf(false) }
   val displayed = uiState.recentTransactions.take(10)
 
@@ -1304,10 +1326,10 @@ private fun TransactionSection(uiState: LedgerUiState, onDelete: (Long) -> Unit)
         }
         Spacer(Modifier.width(8.dp))
         Text(
-          text = "${tx.currency} ${formatAmount(tx.amount)}",
+          text = if (numbersHidden) "••••" else "${tx.currency} ${formatAmount(tx.amount)}",
           style = MaterialTheme.typography.bodySmall,
           fontWeight = FontWeight.SemiBold,
-          color = typeColor,
+          color = if (numbersHidden) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else typeColor,
         )
         AnimatedVisibility(visible = editMode, enter = fadeIn(), exit = fadeOut()) {
           IconButton(
