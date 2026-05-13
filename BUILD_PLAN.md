@@ -68,22 +68,22 @@ Goal: clean, shippable builds with proper secrets management and GitHub releases
 
 ---
 
-## Phase 5 — Pending
+## Phase 5 — UX, Features & Quality (complete)
 
-### 5a — UX polish
-- [ ] Currency and locale selection (stored in DataStore, applied to all formatting)
-- [ ] Onboarding walkthrough on first launch (explain voice entry, SMS forwarding, image input)
-- [ ] Empty-state illustrations for dashboard when no transactions recorded
+### 5a — UX polish (complete)
+- [x] Currency and locale selection — DataStore-persisted currency picker (11 currencies); propagates to dashboard, TTS, PDF, CSV; system prompt updated dynamically
+- [x] Onboarding walkthrough on first launch — 4-page `ModalBottomSheet` (Welcome, Voice/Type, SMS, Photo); slide+fade transitions; `hasSeenOnboarding` flag in DataStore
+- [x] Empty-state illustrations for dashboard — faded receipt icon + hint icons (Voice/Photo/SMS) when ledger is empty; inline empty message in Transaction section
 
-### 5b — Features
-- [ ] CSV export alongside PDF
+### 5b — Features (partial)
+- [x] CSV export alongside PDF — `LedgerCsvExporter` produces UTF-8 CSV (Transactions, Summary, Inventory sections); grid icon button added to dashboard header
 - [ ] In-app HuggingFace OAuth login (replace manual token entry)
 - [ ] Multi-account / multi-business support (separate Room databases per account)
 - [ ] Background sync to Google Drive (WorkManager + Drive REST API)
 - [ ] Recurring transaction detection and reminder
 
-### 5c — Quality
+### 5c — Quality (complete)
+- [x] Remove dead Moshi dependency — `moshi-kotlin` and `moshi-kotlin-codegen` were unused (project uses `org.json.JSONObject`); eliminates kapt deprecation warning
+- [x] Remove `-Xcontext-receivers` compiler flag — no context receiver syntax in codebase; build is now warning-clean
 - [ ] Unit tests for `LedgerTools` JSON parsing and transaction classification
 - [ ] Instrument tests for Room DAO operations
-- [ ] Replace deprecated `-Xcontext-receivers` with `-Xcontext-parameters` (Kotlin 2.2+)
-- [ ] Migrate Moshi kapt codegen to KSP (kapt deprecation warning in current build)
