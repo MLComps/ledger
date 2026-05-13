@@ -13,7 +13,9 @@ Built for the [Gemma 4 Good Hackathon](https://www.kaggle.com/competitions/gemma
 - **Natural language entry** — type, speak, forward an SMS, or photograph a receipt
 - **On-device inference** — Gemma 4 via LiteRT-LM; no internet required after model download
 - **Live dashboard** — expandable transaction history and inventory view with low-stock alerts
-- **PDF export** — shareable A4 report with transaction and inventory tables
+- **CSV & PDF export** — shareable A4 PDF report and a structured CSV (transactions, summary, inventory)
+- **Currency selection** — choose from 11 currencies (KES, NGN, GHS, UGX, TZS, ETB, ZAR, RWF, USD, EUR, GBP); persisted across sessions and applied to dashboard, TTS, and exports
+- **Onboarding walkthrough** — 4-page first-launch guide covering voice entry, SMS monitoring, and image input
 - **TTS coaching** — spoken daily summary of revenue, expenses and profit
 - **Daily digest** — WorkManager notification at 18:00 with the day's totals
 - **Transaction correction** — delete individual entries directly from the dashboard
@@ -146,10 +148,10 @@ Real devices are strongly recommended for extended use.
 ## Roadmap
 
 - [ ] HuggingFace OAuth login flow (in-app token acquisition)
-- [ ] Currency and locale selection
-- [ ] Export to CSV in addition to PDF
 - [ ] Multi-account / multi-business support
 - [ ] Background sync to Google Drive
+- [ ] Recurring transaction detection and reminders
+- [ ] Unit and instrument tests for core logic
 
 ---
 
