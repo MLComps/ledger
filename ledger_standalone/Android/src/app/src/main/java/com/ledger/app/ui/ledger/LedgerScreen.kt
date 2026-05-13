@@ -30,6 +30,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,8 +52,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -91,7 +94,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -101,13 +103,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -122,9 +129,6 @@ import com.ledger.app.ui.common.chat.AudioRecorderPanel
 import com.ledger.app.ui.common.chat.ChatMessageText
 import com.ledger.app.ui.common.chat.ChatMessageWarning
 import com.ledger.app.ui.common.chat.ChatSide
-import com.ledger.app.ui.common.textandvoiceinput.HoldToDictateViewModel
-import com.ledger.app.ui.common.textandvoiceinput.TextAndVoiceInput
-import com.ledger.app.ui.common.textandvoiceinput.VoiceRecognizerOverlay
 import com.ledger.app.ui.theme.LocalPrivacyMode
 import java.io.File
 import java.util.Locale
@@ -272,17 +276,16 @@ private fun LedgerMainUi(
   bottomPadding: Dp,
   viewModel: LedgerViewModel,
   onError: (String) -> Unit,
-  holdToDictateViewModel: HoldToDictateViewModel = hiltViewModel(),
 ) {
   val uiState by viewModel.uiState.collectAsState()
-  val holdToDictateUiState by holdToDictateViewModel.uiState.collectAsState()
   val scrollState = rememberScrollState()
   val context = LocalContext.current
   val privacyMode = LocalPrivacyMode.current
-  var curAmplitude by remember { mutableIntStateOf(0) }
+  var inputText by remember { mutableStateOf("") }
   var showAudioPanel by remember { mutableStateOf(false) }
+  var showAttachMenu by remember { mutableStateOf(false) }
   var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
-  var clearTextTrigger by remember { mutableLongStateOf(0L) }
+  var curAmplitude by remember { mutableIntStateOf(0) }
   var pendingTransactions by remember { mutableStateOf<List<PendingTransaction>>(emptyList()) }
 
   fun handleResponse(response: String) {
@@ -377,7 +380,7 @@ private fun LedgerMainUi(
 
   fun processText(text: String) {
     if (text.trim().isEmpty()) return
-    clearTextTrigger = System.currentTimeMillis()
+    inputText = ""
     viewModel.sendMessage(model, text, onDone = { handleResponse(it) }, onError = onError)
   }
 
@@ -478,36 +481,89 @@ private fun LedgerMainUi(
       }
 
       // ── Input bar ─────────────────────────────────────────────────────────
-      Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        if (showAudioPanel) {
-          AudioRecorderPanel(
-            tintColor = MaterialTheme.colorScheme.primary,
-            onAmplitudeChanged = { curAmplitude = it },
-            onSendAudioClip = { pcmBytes -> processAudio(pcmBytes) },
-            onClose = { showAudioPanel = false },
-            modifier = Modifier.weight(1f),
+      if (showAudioPanel) {
+        AudioRecorderPanel(
+          tintColor = MaterialTheme.colorScheme.primary,
+          onAmplitudeChanged = { curAmplitude = it },
+          onSendAudioClip = { pcmBytes -> processAudio(pcmBytes) },
+          onClose = { showAudioPanel = false },
+          modifier = Modifier.padding(vertical = 4.dp),
+        )
+      } else {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          // Single attach button for all file types
+          if (model.llmSupportImage || model.llmSupportAudio) {
+            Box {
+              IconButton(
+                onClick = { showAttachMenu = true },
+                enabled = !uiState.processing,
+                colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+              ) {
+                Icon(Icons.Rounded.AttachFile, contentDescription = "Attach file", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
+              DropdownMenu(expanded = showAttachMenu, onDismissRequest = { showAttachMenu = false }) {
+                if (model.llmSupportImage) {
+                  DropdownMenuItem(
+                    text = { Text("Image") },
+                    leadingIcon = { Icon(Icons.Rounded.Image, null, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                      showAttachMenu = false
+                      imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                  )
+                }
+                if (model.llmSupportAudio) {
+                  DropdownMenuItem(
+                    text = { Text("Audio file (WAV)") },
+                    leadingIcon = { Icon(Icons.Rounded.Audiotrack, null, modifier = Modifier.size(18.dp)) },
+                    onClick = {
+                      showAttachMenu = false
+                      wavFileLauncher.launch("audio/*")
+                    },
+                  )
+                }
+              }
+            }
+          }
+
+          // Text field — fills all remaining space
+          val fieldShape = RoundedCornerShape(24.dp)
+          BasicTextField(
+            value = inputText,
+            onValueChange = { inputText = it },
+            enabled = !uiState.processing,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { processText(inputText) }),
+            minLines = 1,
+            maxLines = 4,
+            modifier = Modifier
+              .weight(1f)
+              .clip(fieldShape)
+              .background(MaterialTheme.colorScheme.surfaceVariant)
+              .border(1.dp, MaterialTheme.colorScheme.outlineVariant, fieldShape)
+              .padding(horizontal = 16.dp, vertical = 12.dp),
+            decorationBox = { innerTextField ->
+              if (inputText.isEmpty()) {
+                Text(
+                  "Message…",
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                )
+              }
+              innerTextField()
+            },
           )
-        } else {
-          TextAndVoiceInput(
-            tintColor = MaterialTheme.colorScheme.primary,
-            processing = uiState.processing,
-            holdToDictateViewModel = holdToDictateViewModel,
-            modifier = Modifier.padding(start = 12.dp).weight(1f),
-            onDone = { text -> processText(text) },
-            onAmplitudeChanged = { curAmplitude = it },
-            clearTextTrigger = clearTextTrigger,
-            defaultTextInputMode = true,
-          )
+
+          // Camera — only when model supports images
           if (model.llmSupportImage) {
-            IconButton(
-              onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-              enabled = !uiState.processing,
-              modifier = Modifier.padding(start = 4.dp),
-              colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-            ) { Icon(Icons.Rounded.Image, contentDescription = "Upload image", tint = MaterialTheme.colorScheme.onTertiaryContainer) }
             IconButton(
               onClick = {
                 when {
@@ -521,45 +577,39 @@ private fun LedgerMainUi(
                 }
               },
               enabled = !uiState.processing,
-              modifier = Modifier.padding(start = 4.dp),
               colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-            ) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Take photo", tint = MaterialTheme.colorScheme.onTertiaryContainer) }
+            ) {
+              Icon(Icons.Rounded.PhotoCamera, contentDescription = "Take photo", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+            }
           }
-          if (model.llmSupportAudio) {
-            IconButton(
-              onClick = { wavFileLauncher.launch("audio/*") },
-              enabled = !uiState.processing,
-              modifier = Modifier.padding(start = 4.dp),
-              colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-            ) { Icon(Icons.Rounded.Audiotrack, contentDescription = "Upload WAV", tint = MaterialTheme.colorScheme.onSecondaryContainer) }
-            IconButton(
-              onClick = {
-                when {
-                  ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> showAudioPanel = true
-                  else -> audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-              },
-              enabled = !uiState.processing,
-              modifier = Modifier.padding(end = 8.dp),
-              colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            ) { Icon(Icons.Rounded.Mic, contentDescription = "Record audio", tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+
+          // Send (when text present) or mic (when empty)
+          AnimatedContent(targetState = inputText.isNotBlank(), label = "send_mic") { hasText ->
+            if (hasText) {
+              IconButton(
+                onClick = { processText(inputText) },
+                enabled = !uiState.processing,
+                colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
+              ) {
+                Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(20.dp))
+              }
+            } else {
+              IconButton(
+                onClick = {
+                  when {
+                    ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> showAudioPanel = true
+                    else -> audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                  }
+                },
+                enabled = !uiState.processing,
+                colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+              ) {
+                Icon(Icons.Rounded.Mic, contentDescription = "Record audio", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+              }
+            }
           }
         }
       }
-    }
-
-    val recognizing = holdToDictateUiState.recognizing
-    AnimatedVisibility(
-      visible = recognizing,
-      enter = fadeIn(tween(150, easing = FastOutSlowInEasing)),
-      exit = fadeOut(tween(100, easing = FastOutSlowInEasing, delayMillis = 300)),
-    ) {
-      VoiceRecognizerOverlay(
-        tintColor = MaterialTheme.colorScheme.primary,
-        viewModel = holdToDictateViewModel,
-        curAmplitude = curAmplitude,
-        bottomPadding = bottomPadding,
-      )
     }
   }
 }
