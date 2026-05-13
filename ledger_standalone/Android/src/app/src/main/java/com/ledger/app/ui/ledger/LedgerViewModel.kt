@@ -15,6 +15,8 @@ import com.ledger.app.R
 import com.ledger.app.data.BuiltInTaskId
 import com.ledger.app.data.DataStoreRepository
 import com.ledger.app.data.Model
+import com.ledger.app.db.LedgerRepository
+import com.ledger.app.db.TransactionEntity
 import com.ledger.app.data.SAMPLE_RATE
 import com.ledger.app.llm.LlmChatModelHelper
 import com.ledger.app.runtime.LlmModelInstance
@@ -35,7 +37,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -91,7 +95,12 @@ class LedgerViewModel
 constructor(
   @ApplicationContext private val context: Context,
   private val dataStoreRepository: DataStoreRepository,
+  private val ledgerRepository: LedgerRepository,
 ) : ViewModel() {
+
+  val allTransactions: kotlinx.coroutines.flow.StateFlow<List<TransactionEntity>> =
+    ledgerRepository.transactions
+      .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
   private val _uiState = MutableStateFlow(LedgerUiState())
   val uiState = _uiState.asStateFlow()
 
@@ -525,6 +534,15 @@ constructor(
   fun deleteTransaction(timestampMs: Long, tools: LedgerTools) {
     tools.deleteTransaction(timestampMs)
     syncFromTools(tools)
+  }
+
+  fun deleteTransactionById(timestampMs: Long) {
+    viewModelScope.launch(Dispatchers.IO) {
+      ledgerRepository.deleteByTimestamp(timestampMs)
+    }
+    _uiState.update { state ->
+      state.copy(recentTransactions = state.recentTransactions.filter { it.timestampMs != timestampMs })
+    }
   }
 
   fun addMessage(message: ChatMessage) {

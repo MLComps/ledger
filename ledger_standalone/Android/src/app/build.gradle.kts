@@ -93,6 +93,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.datastore.preferences)
+  implementation(libs.compose.shimmer)
   implementation(libs.openid.appauth)
   kapt(libs.hilt.android.compiler)
   ksp(libs.androidx.room.compiler)

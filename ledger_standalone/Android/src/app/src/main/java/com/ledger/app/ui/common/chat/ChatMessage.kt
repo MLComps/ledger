@@ -53,6 +53,7 @@ open class ChatMessageText(
   override val accelerator: String = "",
   override val hideSenderLabel: Boolean = false,
   var data: Any? = null,
+  val timestampMs: Long = System.currentTimeMillis(),
 ) :
   ChatMessage(
     type = ChatMessageType.TEXT,

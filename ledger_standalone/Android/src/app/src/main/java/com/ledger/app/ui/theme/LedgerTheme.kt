@@ -59,6 +59,7 @@ fun LedgerTheme(
 
   MaterialTheme(
     colorScheme = colorScheme,
+    typography = LedgerTypography,
     content = content,
   )
 }

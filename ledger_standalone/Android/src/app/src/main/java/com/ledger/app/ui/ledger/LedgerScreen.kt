@@ -7,19 +7,28 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Telephony
+import android.text.format.DateUtils
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.InfiniteRepeatableSpec
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +45,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -44,16 +55,13 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GridOn
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Image
-import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhotoCamera
-import androidx.compose.material.icons.rounded.Receipt
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.StopCircle
@@ -67,8 +75,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -87,15 +97,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -108,6 +125,7 @@ import com.ledger.app.ui.common.chat.ChatSide
 import com.ledger.app.ui.common.textandvoiceinput.HoldToDictateViewModel
 import com.ledger.app.ui.common.textandvoiceinput.TextAndVoiceInput
 import com.ledger.app.ui.common.textandvoiceinput.VoiceRecognizerOverlay
+import com.ledger.app.ui.theme.LocalPrivacyMode
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
@@ -154,6 +172,8 @@ Rules:
 - confidence="high" when all details are explicit; "medium" when most details are clear but some were inferred; "low" when the transaction is ambiguous or key details were guessed
 - Output a single JSON object. Start your response with { and end with }. No other text."""
 
+// ── Entry point ───────────────────────────────────────────────────────────────
+
 @Composable
 fun LedgerMainScreen(
   model: Model,
@@ -166,7 +186,6 @@ fun LedgerMainScreen(
   val context = LocalContext.current
   var showErrorDialog by remember { mutableStateOf(false) }
   var errorDialogContent by remember { mutableStateOf("") }
-  val taskColor = MaterialTheme.colorScheme.primary
 
   LaunchedEffect(Unit) {
     stateFlow.collect { viewModel.syncFromTools(ledgerTools) }
@@ -177,33 +196,32 @@ fun LedgerMainScreen(
       context = context,
       model = model,
       systemPrompt = buildSystemPrompt(uiState.selectedCurrency),
-      onError = { error ->
-        errorDialogContent = error
-        showErrorDialog = true
-      },
+      onError = { error -> errorDialogContent = error; showErrorDialog = true },
     )
   }
 
-  Box(
-    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).imePadding(),
-    contentAlignment = Alignment.Center
-  ) {
+  Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).imePadding()) {
     if (!uiState.isModelInitialized) {
-      CircularProgressIndicator(
-        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        strokeWidth = 3.dp,
-        modifier = Modifier.size(24.dp),
-      )
+      Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+      ) {
+        CircularProgressIndicator(
+          trackColor = MaterialTheme.colorScheme.surfaceVariant,
+          strokeWidth = 3.dp,
+          modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+        Text("Loading model…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
     } else {
       LedgerMainUi(
         model = model,
         ledgerTools = ledgerTools,
         bottomPadding = bottomPadding,
         viewModel = viewModel,
-        onError = { error ->
-          errorDialogContent = error
-          showErrorDialog = true
-        },
+        onError = { error -> errorDialogContent = error; showErrorDialog = true },
       )
     }
 
@@ -216,19 +234,9 @@ fun LedgerMainScreen(
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
         contentAlignment = Alignment.Center,
       ) {
-        Column(
-          verticalArrangement = Arrangement.spacedBy(8.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-          CircularProgressIndicator(
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            strokeWidth = 3.dp,
-            modifier = Modifier.size(24.dp),
-          )
-          Text(
-            stringResource(R.string.resetting_engine),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+          CircularProgressIndicator(trackColor = MaterialTheme.colorScheme.surfaceVariant, strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
+          Text(stringResource(R.string.resetting_engine), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
       }
     }
@@ -238,38 +246,24 @@ fun LedgerMainScreen(
     AlertDialog(
       title = { Text(stringResource(R.string.error)) },
       text = { Text(errorDialogContent, style = MaterialTheme.typography.bodyMedium) },
-      onDismissRequest = {
-        showErrorDialog = false
-        errorDialogContent = ""
-      },
+      onDismissRequest = { showErrorDialog = false; errorDialogContent = "" },
       dismissButton = {
-        TextButton(onClick = {
-          showErrorDialog = false
-          errorDialogContent = ""
-        }) {
-          Text(stringResource(R.string.cancel))
-        }
+        TextButton(onClick = { showErrorDialog = false; errorDialogContent = "" }) { Text(stringResource(R.string.cancel)) }
       },
       confirmButton = {
         Button(
           onClick = {
-            showErrorDialog = false
-            errorDialogContent = ""
-            viewModel.resetEngine(
-              context = context,
-              model = model,
-              systemPrompt = buildSystemPrompt(uiState.selectedCurrency),
-              onError = { errorDialogContent = it; showErrorDialog = true },
-            )
+            showErrorDialog = false; errorDialogContent = ""
+            viewModel.resetEngine(context, model, buildSystemPrompt(uiState.selectedCurrency)) { errorDialogContent = it; showErrorDialog = true }
           },
-          colors = ButtonDefaults.buttonColors(containerColor = taskColor),
-        ) {
-          Text(stringResource(R.string.reset), color = Color.White)
-        }
+          colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+        ) { Text(stringResource(R.string.reset)) }
       },
     )
   }
 }
+
+// ── Main UI ───────────────────────────────────────────────────────────────────
 
 @Composable
 private fun LedgerMainUi(
@@ -284,12 +278,12 @@ private fun LedgerMainUi(
   val holdToDictateUiState by holdToDictateViewModel.uiState.collectAsState()
   val scrollState = rememberScrollState()
   val context = LocalContext.current
+  val privacyMode = LocalPrivacyMode.current
   var curAmplitude by remember { mutableIntStateOf(0) }
   var showAudioPanel by remember { mutableStateOf(false) }
   var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
   var clearTextTrigger by remember { mutableLongStateOf(0L) }
   var pendingTransactions by remember { mutableStateOf<List<PendingTransaction>>(emptyList()) }
-  val tintColor = MaterialTheme.colorScheme.primary
 
   fun handleResponse(response: String) {
     val parsed = parseResponse(response, ledgerTools, uiState.selectedCurrency)
@@ -303,15 +297,19 @@ private fun LedgerMainUi(
     }
     val autoApply = parsed - needsConfirm.toSet()
     autoApply.forEach { commitTransaction(it, ledgerTools) }
-    if (needsConfirm.isNotEmpty()) {
-      pendingTransactions = needsConfirm
-    }
+    if (needsConfirm.isNotEmpty()) pendingTransactions = needsConfirm
     viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
   }
 
-  val shareLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.StartActivityForResult()
-  ) {}
+  if (pendingTransactions.isNotEmpty()) {
+    ConfirmTransactionsDialog(
+      transactions = pendingTransactions,
+      onConfirm = { pendingTransactions.forEach { commitTransaction(it, ledgerTools) }; pendingTransactions = emptyList() },
+      onDismiss = { pendingTransactions = emptyList() },
+    )
+  }
+
+  val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
 
   fun exportAndShare() {
     viewModel.exportPdf(
@@ -328,148 +326,77 @@ private fun LedgerMainUi(
     )
   }
 
-  fun speakOrStop() {
-    if (uiState.isSpeaking) viewModel.stopSpeaking()
-    else viewModel.speakSummary(onError = onError)
-  }
-
   var smsPermissionGranted by remember {
-    mutableStateOf(
-      ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
-        PackageManager.PERMISSION_GRANTED
-    )
+    mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED)
   }
-
-  val smsPermissionLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.RequestPermission()
-  ) { granted -> smsPermissionGranted = granted }
+  val smsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> smsPermissionGranted = granted }
 
   DisposableEffect(smsPermissionGranted, model.name) {
     if (!smsPermissionGranted || model.instance == null) return@DisposableEffect onDispose {}
     val receiver = LedgerSmsReceiver { sender, body ->
-      viewModel.sendSmsMessage(
-        model = model,
-        sender = sender,
-        body = body,
-        onDone = { response -> handleResponse(response) },
-        onError = onError,
-      )
+      viewModel.sendSmsMessage(model, sender, body, onDone = { handleResponse(it) }, onError = onError)
     }
     val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
       context.registerReceiver(receiver, filter, android.content.Context.RECEIVER_EXPORTED)
-    } else {
+    else {
       @Suppress("UnspecifiedRegisterReceiverFlag")
       context.registerReceiver(receiver, filter)
     }
     onDispose { context.unregisterReceiver(receiver) }
   }
 
-  val cameraLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.TakePicture()
-  ) { success ->
-    if (success) {
-      cameraImageUri?.let { uri ->
-        viewModel.sendImageMessage(
-          model = model,
-          uri = uri,
-          onDone = { response -> handleResponse(response) },
-          onError = onError,
-        )
-      }
+  val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+    if (success) cameraImageUri?.let { uri ->
+      viewModel.sendImageMessage(model, uri, onDone = { handleResponse(it) }, onError = onError)
     }
   }
-
-  val cameraPermissionLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.RequestPermission()
-  ) { granted ->
+  val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
     if (granted) {
-      val imageFile = File(context.cacheDir, "images/ledger_${System.currentTimeMillis()}.jpg")
-        .also { it.parentFile?.mkdirs() }
+      val imageFile = File(context.cacheDir, "images/ledger_${System.currentTimeMillis()}.jpg").also { it.parentFile?.mkdirs() }
       val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", imageFile)
       cameraImageUri = uri
       cameraLauncher.launch(uri)
     }
   }
-
-  val imagePickerLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.PickVisualMedia()
-  ) { uri ->
+  val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
     uri ?: return@rememberLauncherForActivityResult
-    viewModel.sendImageMessage(
-      model = model,
-      uri = uri,
-      onDone = { response -> handleResponse(response) },
-      onError = onError,
-    )
+    viewModel.sendImageMessage(model, uri, onDone = { handleResponse(it) }, onError = onError)
   }
-
-  val audioPermissionLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.RequestPermission()
-  ) { granted ->
+  val audioPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
     if (granted) showAudioPanel = true
   }
-
-  val wavFileLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.GetContent()
-  ) { uri ->
+  val wavFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
     uri ?: return@rememberLauncherForActivityResult
-    viewModel.sendWavFileMessage(
-      model = model,
-      uri = uri,
-      onDone = { response -> handleResponse(response) },
-      onError = onError,
-    )
+    viewModel.sendWavFileMessage(model, uri, onDone = { handleResponse(it) }, onError = onError)
   }
 
   LaunchedEffect(uiState.messages.size) {
-    if (uiState.messages.isNotEmpty()) {
-      scrollState.animateScrollTo(Int.MAX_VALUE)
-    }
+    if (uiState.messages.isNotEmpty()) scrollState.animateScrollTo(Int.MAX_VALUE)
   }
 
   fun processText(text: String) {
     if (text.trim().isEmpty()) return
     clearTextTrigger = System.currentTimeMillis()
-    viewModel.sendMessage(
-      model = model,
-      text = text,
-      onDone = { response -> handleResponse(response) },
-      onError = onError,
-    )
+    viewModel.sendMessage(model, text, onDone = { handleResponse(it) }, onError = onError)
   }
 
   fun processAudio(pcmBytes: ByteArray) {
     showAudioPanel = false
-    viewModel.sendAudioMessage(
-      model = model,
-      pcmBytes = pcmBytes,
-      onDone = { response -> handleResponse(response) },
-      onError = onError,
-    )
-  }
-
-  if (pendingTransactions.isNotEmpty()) {
-    ConfirmTransactionsDialog(
-      transactions = pendingTransactions,
-      onConfirm = {
-        pendingTransactions.forEach { commitTransaction(it, ledgerTools) }
-        pendingTransactions = emptyList()
-      },
-      onDismiss = { pendingTransactions = emptyList() },
-    )
+    viewModel.sendAudioMessage(model, pcmBytes, onDone = { handleResponse(it) }, onError = onError)
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
     Column(
-      modifier =
-        Modifier.padding(
-          bottom =
-            if (WindowInsets.ime.getBottom(LocalDensity.current) == 0) bottomPadding else 12.dp
-        )
+      modifier = Modifier.padding(
+        bottom = if (WindowInsets.ime.getBottom(LocalDensity.current) == 0) bottomPadding else 12.dp
+      )
     ) {
-      LedgerDashboard(
+      // ── Hero balance card ─────────────────────────────────────────────────
+      HeroBalanceCard(
         uiState = uiState,
+        privacyModeEnabled = privacyMode.value,
+        onTogglePrivacy = { privacyMode.value = !privacyMode.value },
         onExportPdf = { exportAndShare() },
         onExportCsv = {
           viewModel.exportCsv(
@@ -485,21 +412,14 @@ private fun LedgerMainUi(
             onError = onError,
           )
         },
-        onSpeakToggle = { speakOrStop() },
-        onDeleteTransaction = { ts -> viewModel.deleteTransaction(ts, ledgerTools) },
-        onCurrencyChange = { code ->
-          viewModel.saveCurrency(code, buildSystemPrompt(code))
-        },
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        onSpeakToggle = { if (uiState.isSpeaking) viewModel.stopSpeaking() else viewModel.speakSummary(onError = onError) },
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
       )
 
+      // ── Control chips ─────────────────────────────────────────────────────
       Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 16.dp)
-          .padding(bottom = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        verticalAlignment = Alignment.CenterVertically,
       ) {
         val validationLabel = when (uiState.validationMode) {
           "all" -> "Validate: All"
@@ -508,114 +428,63 @@ private fun LedgerMainUi(
         }
         FilterChip(
           selected = uiState.validationMode != "none",
-          onClick = {
-            val next = when (uiState.validationMode) {
-              "none" -> "critical"
-              "critical" -> "all"
-              else -> "none"
-            }
-            viewModel.saveValidationMode(next)
-          },
-          label = { Text(text = validationLabel, style = MaterialTheme.typography.labelSmall) },
-          leadingIcon = {
-            Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
-          },
+          onClick = { viewModel.saveValidationMode(when (uiState.validationMode) { "none" -> "critical"; "critical" -> "all"; else -> "none" }) },
+          label = { Text(validationLabel, style = MaterialTheme.typography.labelSmall) },
+          leadingIcon = { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(14.dp)) },
         )
         FilterChip(
           selected = smsPermissionGranted,
-          onClick = {
-            if (!smsPermissionGranted) {
-              smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS)
-            }
-          },
-          label = {
-            Text(
-              text = if (smsPermissionGranted) "SMS: Active" else "SMS: Off",
-              style = MaterialTheme.typography.labelSmall,
-            )
-          },
-          leadingIcon = {
-            Icon(
-              Icons.Rounded.Sms,
-              contentDescription = null,
-              modifier = Modifier.size(14.dp),
-            )
-          },
+          onClick = { if (!smsPermissionGranted) smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) },
+          label = { Text(if (smsPermissionGranted) "SMS: Active" else "SMS: Off", style = MaterialTheme.typography.labelSmall) },
+          leadingIcon = { Icon(Icons.Rounded.Sms, null, modifier = Modifier.size(14.dp)) },
         )
       }
 
+      // ── Chat messages ─────────────────────────────────────────────────────
       Column(
-        modifier = Modifier.weight(1f).verticalScroll(scrollState).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.weight(1f).verticalScroll(scrollState).padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
+        if (uiState.messages.isEmpty() && !uiState.processing) {
+          ChatEmptyState()
+        }
+
         for (message in uiState.messages) {
           when (message) {
-            is ChatMessageText -> {
-              val isUser = message.side == ChatSide.USER
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-              ) {
-                Card(
-                  shape = RoundedCornerShape(12.dp),
-                  colors =
-                    CardDefaults.cardColors(
-                      containerColor =
-                        if (isUser) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                  modifier = Modifier.padding(vertical = 2.dp),
-                ) {
-                  Text(
-                    text = message.content,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    color =
-                      if (isUser) MaterialTheme.colorScheme.onPrimary
-                      else MaterialTheme.colorScheme.onSurfaceVariant,
-                    style =
-                      if (isUser) MaterialTheme.typography.bodyMedium
-                      else MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                  )
-                }
-              }
+            is ChatMessageText -> ChatBubble(message = message, onDelete = {
+              viewModel.addMessage(ChatMessageWarning("Message removed"))
+            })
+            is ChatMessageWarning -> Box(
+              modifier = Modifier.fillMaxWidth(),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = message.content,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.padding(vertical = 4.dp),
+              )
             }
-
-            is ChatMessageWarning -> {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-              ) {
-                Text(
-                  text = message.content,
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                  modifier = Modifier.padding(vertical = 4.dp),
-                )
-              }
-            }
-
             else -> {}
           }
         }
 
+        // Thinking indicator
         if (uiState.processing) {
-          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-            CircularProgressIndicator(
-              trackColor = MaterialTheme.colorScheme.surfaceVariant,
-              strokeWidth = 2.dp,
-              modifier = Modifier.size(20.dp).padding(top = 4.dp),
-            )
+          Row(modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 4.dp), horizontalArrangement = Arrangement.Start) {
+            ThinkingBubble()
           }
         }
       }
 
+      // ── Input bar ─────────────────────────────────────────────────────────
       Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         if (showAudioPanel) {
           AudioRecorderPanel(
-            tintColor = tintColor,
+            tintColor = MaterialTheme.colorScheme.primary,
             onAmplitudeChanged = { curAmplitude = it },
             onSendAudioClip = { pcmBytes -> processAudio(pcmBytes) },
             onClose = { showAudioPanel = false },
@@ -623,10 +492,10 @@ private fun LedgerMainUi(
           )
         } else {
           TextAndVoiceInput(
-            tintColor = tintColor,
+            tintColor = MaterialTheme.colorScheme.primary,
             processing = uiState.processing,
             holdToDictateViewModel = holdToDictateViewModel,
-            modifier = Modifier.padding(start = 16.dp).weight(1f),
+            modifier = Modifier.padding(start = 12.dp).weight(1f),
             onDone = { text -> processText(text) },
             onAmplitudeChanged = { curAmplitude = it },
             clearTextTrigger = clearTextTrigger,
@@ -634,37 +503,17 @@ private fun LedgerMainUi(
           )
           if (model.llmSupportImage) {
             IconButton(
-              onClick = {
-                imagePickerLauncher.launch(
-                  PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                )
-              },
+              onClick = { imagePickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
               enabled = !uiState.processing,
               modifier = Modifier.padding(start = 4.dp),
-              colors = IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-              ),
-            ) {
-              Icon(
-                Icons.Rounded.Image,
-                contentDescription = "Upload image",
-                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-              )
-            }
+              colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            ) { Icon(Icons.Rounded.Image, contentDescription = "Upload image", tint = MaterialTheme.colorScheme.onTertiaryContainer) }
             IconButton(
               onClick = {
                 when {
-                  ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                    PackageManager.PERMISSION_GRANTED -> {
-                    val imageFile = File(
-                      context.cacheDir,
-                      "images/ledger_${System.currentTimeMillis()}.jpg"
-                    ).also { it.parentFile?.mkdirs() }
-                    val uri = FileProvider.getUriForFile(
-                      context,
-                      "${context.packageName}.provider",
-                      imageFile,
-                    )
+                  ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED -> {
+                    val imageFile = File(context.cacheDir, "images/ledger_${System.currentTimeMillis()}.jpg").also { it.parentFile?.mkdirs() }
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", imageFile)
                     cameraImageUri = uri
                     cameraLauncher.launch(uri)
                   }
@@ -673,52 +522,27 @@ private fun LedgerMainUi(
               },
               enabled = !uiState.processing,
               modifier = Modifier.padding(start = 4.dp),
-              colors = IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-              ),
-            ) {
-              Icon(
-                Icons.Rounded.PhotoCamera,
-                contentDescription = "Take photo",
-                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-              )
-            }
+              colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+            ) { Icon(Icons.Rounded.PhotoCamera, contentDescription = "Take photo", tint = MaterialTheme.colorScheme.onTertiaryContainer) }
           }
           if (model.llmSupportAudio) {
             IconButton(
               onClick = { wavFileLauncher.launch("audio/*") },
               enabled = !uiState.processing,
               modifier = Modifier.padding(start = 4.dp),
-              colors = IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-              ),
-            ) {
-              Icon(
-                Icons.Rounded.Audiotrack,
-                contentDescription = "Upload WAV file",
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-              )
-            }
+              colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            ) { Icon(Icons.Rounded.Audiotrack, contentDescription = "Upload WAV", tint = MaterialTheme.colorScheme.onSecondaryContainer) }
             IconButton(
               onClick = {
                 when {
-                  ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                    PackageManager.PERMISSION_GRANTED -> showAudioPanel = true
+                  ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED -> showAudioPanel = true
                   else -> audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
               },
               enabled = !uiState.processing,
               modifier = Modifier.padding(end = 8.dp),
-              colors = IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-              ),
-            ) {
-              Icon(
-                Icons.Rounded.Mic,
-                contentDescription = "Record audio for AI",
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-              )
-            }
+              colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+            ) { Icon(Icons.Rounded.Mic, contentDescription = "Record audio", tint = MaterialTheme.colorScheme.onPrimaryContainer) }
           }
         }
       }
@@ -727,15 +551,11 @@ private fun LedgerMainUi(
     val recognizing = holdToDictateUiState.recognizing
     AnimatedVisibility(
       visible = recognizing,
-      enter = fadeIn(animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)),
-      exit =
-        fadeOut(
-          animationSpec =
-            tween(durationMillis = 100, easing = FastOutSlowInEasing, delayMillis = 300)
-        ),
+      enter = fadeIn(tween(150, easing = FastOutSlowInEasing)),
+      exit = fadeOut(tween(100, easing = FastOutSlowInEasing, delayMillis = 300)),
     ) {
       VoiceRecognizerOverlay(
-        tintColor = tintColor,
+        tintColor = MaterialTheme.colorScheme.primary,
         viewModel = holdToDictateViewModel,
         curAmplitude = curAmplitude,
         bottomPadding = bottomPadding,
@@ -743,6 +563,251 @@ private fun LedgerMainUi(
     }
   }
 }
+
+// ── Hero balance card ─────────────────────────────────────────────────────────
+
+@Composable
+private fun HeroBalanceCard(
+  uiState: LedgerUiState,
+  privacyModeEnabled: Boolean,
+  onTogglePrivacy: () -> Unit,
+  onExportPdf: () -> Unit,
+  onExportCsv: () -> Unit,
+  onSpeakToggle: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val mask = "••••"
+  val animatedRevenue by animateFloatAsState(uiState.revenue.toFloat(), tween(600, easing = FastOutSlowInEasing), label = "rev")
+  val animatedCost by animateFloatAsState(uiState.totalCost.toFloat(), tween(600, easing = FastOutSlowInEasing), label = "cost")
+  val animatedProfit by animateFloatAsState(uiState.netProfit.toFloat(), tween(700, easing = FastOutSlowInEasing), label = "profit")
+
+  ElevatedCard(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(24.dp),
+    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp),
+  ) {
+    Box(
+      modifier = Modifier.fillMaxWidth().background(
+        Brush.linearGradient(
+          colors = listOf(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.tertiary,
+          )
+        )
+      )
+    ) {
+      Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+        // Revenue / Cost / action buttons row
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+          // Revenue
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Revenue", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.75f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              if (uiState.netProfit >= 0)
+                Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(13.dp), tint = Color.White.copy(alpha = 0.8f))
+              Spacer(Modifier.width(2.dp))
+              Text(
+                text = if (privacyModeEnabled) mask else "${uiState.selectedCurrency} ${formatAmount(animatedRevenue.toDouble())}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+              )
+            }
+          }
+          // Cost
+          Column(modifier = Modifier.weight(1f)) {
+            Text("Cost", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.75f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              if (uiState.netProfit < 0)
+                Icon(Icons.AutoMirrored.Rounded.TrendingDown, null, modifier = Modifier.size(13.dp), tint = Color.White.copy(alpha = 0.8f))
+              Spacer(Modifier.width(2.dp))
+              Text(
+                text = if (privacyModeEnabled) mask else "${uiState.selectedCurrency} ${formatAmount(animatedCost.toDouble())}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+              )
+            }
+          }
+          // Icon row
+          Row {
+            IconButton(onClick = onTogglePrivacy, modifier = Modifier.size(32.dp)) {
+              Icon(
+                if (privacyModeEnabled) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                contentDescription = "Toggle privacy",
+                modifier = Modifier.size(18.dp),
+                tint = Color.White.copy(alpha = if (privacyModeEnabled) 1f else 0.65f),
+              )
+            }
+            IconButton(onClick = onSpeakToggle, modifier = Modifier.size(32.dp)) {
+              Icon(
+                if (uiState.isSpeaking) Icons.Rounded.StopCircle else Icons.Rounded.VolumeUp,
+                contentDescription = "Speak",
+                modifier = Modifier.size(18.dp),
+                tint = Color.White.copy(alpha = 0.85f),
+              )
+            }
+            IconButton(onClick = onExportCsv, modifier = Modifier.size(32.dp)) {
+              Icon(Icons.Rounded.GridOn, contentDescription = "Export CSV", modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.85f))
+            }
+            IconButton(onClick = onExportPdf, modifier = Modifier.size(32.dp)) {
+              Icon(Icons.Rounded.Share, contentDescription = "Export PDF", modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.85f))
+            }
+          }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Big net profit
+        AnimatedContent(
+          targetState = if (privacyModeEnabled) null else animatedProfit.toDouble(),
+          transitionSpec = { (fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 }) togetherWith fadeOut(tween(200)) },
+          label = "profit_anim",
+        ) { amount ->
+          Column {
+            Text(
+              text = if (amount == null) mask else "${uiState.selectedCurrency} ${formatAmount(amount)}",
+              style = MaterialTheme.typography.displaySmall,
+              fontWeight = FontWeight.Bold,
+              color = Color.White,
+            )
+            Text(
+              text = if (uiState.netProfit >= 0) "Net Profit  ·  ${uiState.transactionCount} txn${if (uiState.transactionCount != 1) "s" else ""}"
+              else "Net Loss  ·  ${uiState.transactionCount} txn${if (uiState.transactionCount != 1) "s" else ""}",
+              style = MaterialTheme.typography.labelSmall,
+              color = Color.White.copy(alpha = 0.75f),
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+// ── Chat composables ──────────────────────────────────────────────────────────
+
+@Composable
+private fun ChatBubble(message: ChatMessageText, onDelete: () -> Unit) {
+  val isUser = message.side == ChatSide.USER
+  var showMenu by remember { mutableStateOf(false) }
+  val clipboard = LocalClipboardManager.current
+
+  val timeLabel = remember(message.timestampMs) {
+    DateUtils.getRelativeTimeSpanString(
+      message.timestampMs,
+      System.currentTimeMillis(),
+      DateUtils.MINUTE_IN_MILLIS,
+      DateUtils.FORMAT_ABBREV_RELATIVE,
+    ).toString()
+  }
+
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+  ) {
+    Column(
+      horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+      modifier = Modifier.widthIn(max = 300.dp),
+    ) {
+      Box {
+        Card(
+          shape = RoundedCornerShape(
+            topStart = if (isUser) 18.dp else 4.dp,
+            topEnd = if (isUser) 4.dp else 18.dp,
+            bottomStart = 18.dp,
+            bottomEnd = 18.dp,
+          ),
+          colors = CardDefaults.cardColors(
+            containerColor = if (isUser) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.surfaceVariant,
+          ),
+          modifier = if (!isUser) Modifier.clickable { showMenu = true } else Modifier,
+          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        ) {
+          Text(
+            text = message.content,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            color = if (isUser) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = if (isUser) MaterialTheme.typography.bodyMedium
+            else MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+          )
+        }
+
+        if (!isUser) {
+          DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+            DropdownMenuItem(
+              text = { Text("Copy") },
+              leadingIcon = { Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(16.dp)) },
+              onClick = { clipboard.setText(AnnotatedString(message.content)); showMenu = false },
+            )
+            DropdownMenuItem(
+              text = { Text("Delete") },
+              leadingIcon = { Icon(Icons.Rounded.Delete, null, modifier = Modifier.size(16.dp)) },
+              onClick = { onDelete(); showMenu = false },
+            )
+          }
+        }
+      }
+
+      Text(
+        text = timeLabel,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+      )
+    }
+  }
+}
+
+@Composable
+private fun ThinkingBubble() {
+  Card(
+    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+      horizontalArrangement = Arrangement.spacedBy(5.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      val transition = rememberInfiniteTransition(label = "thinking")
+      (0..2).forEach { index ->
+        val offsetY by transition.animateFloat(
+          initialValue = 0f,
+          targetValue = -6f,
+          animationSpec = infiniteRepeatable(
+            animation = tween(400, delayMillis = index * 140, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+          ),
+          label = "dot_$index",
+        )
+        Box(
+          modifier = Modifier
+            .size(7.dp)
+            .graphicsLayer { translationY = offsetY }
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)),
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun ChatEmptyState() {
+  Column(
+    modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp, horizontal = 24.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Text("Start recording", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+    Text("Tell Ledger what you sold, purchased, or spent today", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), textAlign = TextAlign.Center)
+  }
+}
+
+// ── Confirm dialog ────────────────────────────────────────────────────────────
 
 data class PendingTransaction(
   val item: String,
@@ -756,40 +821,59 @@ data class PendingTransaction(
   val timestampMs: Long = System.currentTimeMillis(),
 )
 
-/**
- * Parses the model response. Stock updates are always applied immediately.
- * Returns pending transactions — caller decides whether to confirm or auto-apply.
- */
-private fun parseResponse(
-  jsonStr: String,
-  tools: LedgerTools,
-  defaultCurrency: String,
-): List<PendingTransaction> {
+@Composable
+private fun ConfirmTransactionsDialog(
+  transactions: List<PendingTransaction>,
+  onConfirm: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Rounded.Warning, null, tint = Color(0xFFE65100), modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(if (transactions.size == 1) "Confirm Transaction" else "Confirm ${transactions.size} Transactions")
+      }
+    },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Low-confidence extraction — please verify:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        transactions.forEach { tx ->
+          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(tx.item, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(tx.confidence, style = MaterialTheme.typography.labelSmall, color = when (tx.confidence) { "low" -> Color(0xFFC62828); "medium" -> Color(0xFFE65100); else -> Color(0xFF2E7D32) }, fontWeight = FontWeight.Bold)
+              }
+              Text("${tx.transactionType}  ·  ${tx.currency} ${formatAmount(tx.amount)}  ·  ${fmtQty(tx.quantity)} ${tx.unit}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+        }
+      }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Discard") } },
+    confirmButton = { Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) { Text("Save") } },
+  )
+}
+
+// ── JSON parsing ──────────────────────────────────────────────────────────────
+
+private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: String): List<PendingTransaction> {
   return try {
-    val start = jsonStr.indexOf('{')
-    val end = jsonStr.lastIndexOf('}')
-    if (start == -1 || end == -1 || end <= start) {
-      Log.w(TAG, "No JSON object found in response: $jsonStr")
-      return emptyList()
-    }
+    val start = jsonStr.indexOf('{'); val end = jsonStr.lastIndexOf('}')
+    if (start == -1 || end == -1 || end <= start) return emptyList()
     val json = JSONObject(jsonStr.substring(start, end + 1))
     val action = json.optString("action", "unknown")
-    val transactions = json.optJSONArray("transactions")
     val stockUpdates = json.optJSONArray("stock_updates")
-
-    // Stock updates always apply immediately — no validation needed
     if (stockUpdates != null) {
       for (i in 0 until stockUpdates.length()) {
         val upd = stockUpdates.getJSONObject(i)
-        tools.updateStock(
-          item = upd.optString("item", "item"),
-          quantityDelta = upd.optDouble("quantity_delta", 0.0),
-          unit = upd.optString("unit", "unit"),
-        )
+        tools.updateStock(upd.optString("item", "item"), upd.optDouble("quantity_delta", 0.0), upd.optString("unit", "unit"))
       }
     }
-
-    if (action == "add_transaction" && transactions != null) {
+    val transactions = json.optJSONArray("transactions")
+    if (action == "add_transaction" && transactions != null)
       (0 until transactions.length()).map { i ->
         val tx = transactions.getJSONObject(i)
         PendingTransaction(
@@ -803,656 +887,25 @@ private fun parseResponse(
           confidence = tx.optString("confidence", "high"),
         )
       }
-    } else emptyList()
+    else emptyList()
   } catch (e: Exception) {
-    Log.w(TAG, "Could not parse JSON response: $jsonStr", e)
+    Log.w(TAG, "JSON parse failed: ${e.message}")
     emptyList()
   }
 }
 
 private fun commitTransaction(tx: PendingTransaction, tools: LedgerTools) {
-  tools.addTransaction(
-    item = tx.item,
-    amount = tx.amount,
-    currency = tx.currency,
-    transactionType = tx.transactionType,
-    cost = tx.cost,
-    quantity = tx.quantity,
-    unit = tx.unit,
-    confidence = tx.confidence,
-  )
+  tools.addTransaction(tx.item, tx.amount, tx.currency, tx.transactionType, tx.cost, tx.quantity, tx.unit, tx.confidence)
 }
 
-// ─── Dashboard ───────────────────────────────────────────────────────────────
+// ── Formatters ────────────────────────────────────────────────────────────────
 
-private enum class DashboardSection { TRANSACTIONS, INVENTORY }
-
-private val SUPPORTED_CURRENCIES = listOf(
-  "KES" to "Kenya Shilling",
-  "NGN" to "Nigeria Naira",
-  "GHS" to "Ghana Cedi",
-  "UGX" to "Uganda Shilling",
-  "TZS" to "Tanzania Shilling",
-  "ETB" to "Ethiopia Birr",
-  "ZAR" to "South Africa Rand",
-  "RWF" to "Rwanda Franc",
-  "USD" to "US Dollar",
-  "EUR" to "Euro",
-  "GBP" to "British Pound",
-)
-
-@Composable
-private fun LedgerDashboard(
-  uiState: LedgerUiState,
-  onExportPdf: () -> Unit,
-  onExportCsv: () -> Unit,
-  onSpeakToggle: () -> Unit,
-  onDeleteTransaction: (Long) -> Unit,
-  onCurrencyChange: (String) -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  var expanded by remember { mutableStateOf<DashboardSection?>(null) }
-  var showCurrencyPicker by remember { mutableStateOf(false) }
-  var numbersHidden by remember { mutableStateOf(false) }
-  val mask = "••••"
-
-  if (showCurrencyPicker) {
-    AlertDialog(
-      onDismissRequest = { showCurrencyPicker = false },
-      title = { Text("Select Currency") },
-      text = {
-        Column {
-          SUPPORTED_CURRENCIES.forEach { (code, name) ->
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                  onCurrencyChange(code)
-                  showCurrencyPicker = false
-                }
-                .padding(vertical = 10.dp, horizontal = 4.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Text(
-                text = code,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (code == uiState.selectedCurrency) FontWeight.Bold else FontWeight.Normal,
-                color = if (code == uiState.selectedCurrency) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.width(48.dp),
-              )
-              Text(
-                text = name,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-          }
-        }
-      },
-      confirmButton = {
-        TextButton(onClick = { showCurrencyPicker = false }) { Text("Close") }
-      },
-    )
-  }
-  val hasTransactions = uiState.recentTransactions.isNotEmpty()
-  val hasStock = uiState.stockItemNames.isNotEmpty()
-
-  Card(
-    modifier = modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(16.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-  ) {
-    Column {
-      // Metrics row + export icon
-      Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
-          SummaryMetric(
-            label = "Revenue",
-            value = if (numbersHidden) mask else formatAmount(uiState.revenue),
-          )
-          SummaryMetric(
-            label = "Cost",
-            value = if (numbersHidden) mask else formatAmount(uiState.totalCost),
-          )
-          SummaryMetric(
-            label = "Profit",
-            value = if (numbersHidden) mask else formatAmount(uiState.netProfit),
-            valueColor = if (numbersHidden) MaterialTheme.colorScheme.onSurfaceVariant else when {
-              uiState.netProfit > 0 -> Color(0xFF2E7D32)
-              uiState.netProfit < 0 -> Color(0xFFC62828)
-              else -> MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            trailingIcon = if (numbersHidden) null else when {
-              uiState.netProfit > 0 -> {
-                { Icon(Icons.AutoMirrored.Rounded.TrendingUp, null, modifier = Modifier.size(14.dp), tint = Color(0xFF2E7D32)) }
-              }
-              uiState.netProfit < 0 -> {
-                { Icon(Icons.AutoMirrored.Rounded.TrendingDown, null, modifier = Modifier.size(14.dp), tint = Color(0xFFC62828)) }
-              }
-              else -> null
-            },
-          )
-          SummaryMetric(label = "Txns", value = uiState.transactionCount.toString())
-        }
-        IconButton(
-          onClick = { numbersHidden = !numbersHidden },
-          modifier = Modifier.size(36.dp),
-          colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Transparent),
-        ) {
-          Icon(
-            if (numbersHidden) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-            contentDescription = if (numbersHidden) "Show amounts" else "Hide amounts",
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (numbersHidden) 1f else 0.5f),
-          )
-        }
-        TextButton(
-          onClick = { showCurrencyPicker = true },
-          modifier = Modifier.height(36.dp),
-          contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-        ) {
-          Text(
-            text = uiState.selectedCurrency,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-          )
-        }
-        IconButton(
-          onClick = onSpeakToggle,
-          modifier = Modifier.size(36.dp),
-          colors = IconButtonDefaults.iconButtonColors(
-            containerColor = if (uiState.isSpeaking)
-              MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
-            else
-              MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f),
-          ),
-        ) {
-          Icon(
-            if (uiState.isSpeaking) Icons.Rounded.StopCircle else Icons.Rounded.VolumeUp,
-            contentDescription = if (uiState.isSpeaking) "Stop speaking" else "Speak summary",
-            modifier = Modifier.size(18.dp),
-            tint = if (uiState.isSpeaking) MaterialTheme.colorScheme.tertiary
-            else MaterialTheme.colorScheme.secondary,
-          )
-        }
-        IconButton(
-          onClick = onExportCsv,
-          modifier = Modifier.size(36.dp),
-          colors = IconButtonDefaults.iconButtonColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
-          ),
-        ) {
-          Icon(
-            Icons.Rounded.GridOn,
-            contentDescription = "Export CSV",
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-          )
-        }
-        IconButton(
-          onClick = onExportPdf,
-          modifier = Modifier.size(36.dp),
-          colors = IconButtonDefaults.iconButtonColors(
-            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-          ),
-        ) {
-          Icon(
-            Icons.Rounded.Share,
-            contentDescription = stringResource(R.string.export_pdf),
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.primary,
-          )
-        }
-      }
-
-      HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-
-      if (!hasTransactions && !hasStock) {
-        DashboardEmptyState()
-      } else {
-        // Section toggles
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-          horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-          SectionToggle(
-            label = if (hasTransactions) "Transactions (${uiState.recentTransactions.size})" else "Transactions",
-            icon = { Icon(Icons.Rounded.Receipt, null, modifier = Modifier.size(14.dp)) },
-            selected = expanded == DashboardSection.TRANSACTIONS,
-            onClick = {
-              expanded = if (expanded == DashboardSection.TRANSACTIONS) null else DashboardSection.TRANSACTIONS
-            },
-            modifier = Modifier.weight(1f),
-          )
-          val lowCount = uiState.lowStockItems.size
-          SectionToggle(
-            label = if (lowCount > 0) "Inventory ⚠ $lowCount" else if (hasStock) "Inventory (${uiState.stockItemNames.size})" else "Inventory",
-            icon = { Icon(Icons.Rounded.Inventory2, null, modifier = Modifier.size(14.dp)) },
-            selected = expanded == DashboardSection.INVENTORY,
-            onClick = {
-              expanded = if (expanded == DashboardSection.INVENTORY) null else DashboardSection.INVENTORY
-            },
-            modifier = Modifier.weight(1f),
-            warn = lowCount > 0,
-          )
-        }
-
-        // Expanded section content
-        AnimatedVisibility(
-          visible = expanded != null,
-          enter = expandVertically() + fadeIn(),
-          exit = shrinkVertically() + fadeOut(),
-        ) {
-          Column {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-            when (expanded) {
-              DashboardSection.TRANSACTIONS -> TransactionSection(uiState, onDeleteTransaction, numbersHidden)
-              DashboardSection.INVENTORY -> InventorySection(uiState)
-              null -> {}
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-private fun ConfirmTransactionsDialog(
-  transactions: List<PendingTransaction>,
-  onConfirm: () -> Unit,
-  onDismiss: () -> Unit,
-) {
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-          Icons.Rounded.Warning,
-          contentDescription = null,
-          tint = Color(0xFFE65100),
-          modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(if (transactions.size == 1) "Confirm Transaction" else "Confirm ${transactions.size} Transactions")
-      }
-    },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          text = "Low-confidence extraction — please verify before saving:",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        transactions.forEach { tx ->
-          Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-          ) {
-            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Text(
-                  text = tx.item,
-                  style = MaterialTheme.typography.bodySmall,
-                  fontWeight = FontWeight.SemiBold,
-                  modifier = Modifier.weight(1f),
-                )
-                val badgeColor = when (tx.confidence) {
-                  "low" -> Color(0xFFC62828)
-                  "medium" -> Color(0xFFE65100)
-                  else -> Color(0xFF2E7D32)
-                }
-                Text(
-                  text = tx.confidence,
-                  style = MaterialTheme.typography.labelSmall,
-                  color = badgeColor,
-                  fontWeight = FontWeight.Bold,
-                )
-              }
-              Text(
-                text = "${tx.transactionType}  ·  ${tx.currency} ${formatAmount(tx.amount)}  ·  ${fmtQty(tx.quantity)} ${tx.unit}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-          }
-        }
-      }
-    },
-    dismissButton = {
-      TextButton(onClick = onDismiss) { Text("Discard") }
-    },
-    confirmButton = {
-      Button(
-        onClick = onConfirm,
-        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-      ) {
-        Text("Save")
-      }
-    },
-  )
-}
-
-@Composable
-private fun DashboardEmptyState() {
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(vertical = 24.dp, horizontal = 16.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    Icon(
-      imageVector = Icons.Rounded.Receipt,
-      contentDescription = null,
-      modifier = Modifier.size(40.dp),
-      tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-    )
-    Text(
-      text = "Nothing recorded yet",
-      style = MaterialTheme.typography.titleSmall,
-      fontWeight = FontWeight.SemiBold,
-      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-    )
-    Text(
-      text = "Tell Ledger what you sold, purchased, or spent today",
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
-      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-    )
-    Spacer(Modifier.height(4.dp))
-    Row(
-      horizontalArrangement = Arrangement.spacedBy(16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      HintIcon(icon = Icons.Rounded.Mic, label = "Voice")
-      HintIcon(icon = Icons.Rounded.PhotoCamera, label = "Photo")
-      HintIcon(icon = Icons.Rounded.Sms, label = "SMS")
-    }
-  }
-}
-
-@Composable
-private fun HintIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
-  Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-    Icon(
-      imageVector = icon,
-      contentDescription = null,
-      modifier = Modifier.size(18.dp),
-      tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-    )
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-    )
-  }
-}
-
-@Composable
-private fun SectionToggle(
-  label: String,
-  icon: @Composable () -> Unit,
-  selected: Boolean,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-  warn: Boolean = false,
-) {
-  val bg = when {
-    selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-    warn -> Color(0xFFFFF3E0)
-    else -> Color.Transparent
-  }
-  val contentColor = when {
-    selected -> MaterialTheme.colorScheme.primary
-    warn -> Color(0xFFE65100)
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
-  }
-  Row(
-    modifier = modifier
-      .background(bg, RoundedCornerShape(8.dp))
-      .clickable(onClick = onClick)
-      .padding(horizontal = 8.dp, vertical = 6.dp),
-    horizontalArrangement = Arrangement.Center,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Box(modifier = Modifier.size(14.dp)) {
-      androidx.compose.runtime.CompositionLocalProvider(
-        androidx.compose.material3.LocalContentColor provides contentColor
-      ) { icon() }
-    }
-    Spacer(Modifier.width(4.dp))
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelSmall,
-      color = contentColor,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-    )
-    Spacer(Modifier.width(2.dp))
-    Icon(
-      if (selected) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-      contentDescription = null,
-      modifier = Modifier.size(12.dp),
-      tint = contentColor,
-    )
-  }
-}
-
-@Composable
-private fun TransactionSection(uiState: LedgerUiState, onDelete: (Long) -> Unit, numbersHidden: Boolean = false) {
-  var editMode by remember { mutableStateOf(false) }
-  val displayed = uiState.recentTransactions.take(10)
-
-  Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        text = stringResource(R.string.recent_transactions),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        modifier = Modifier.weight(1f),
-      )
-      IconButton(
-        onClick = { editMode = !editMode },
-        modifier = Modifier.size(28.dp),
-      ) {
-        Icon(
-          if (editMode) Icons.Rounded.StopCircle else Icons.Rounded.Edit,
-          contentDescription = if (editMode) "Exit edit mode" else "Edit transactions",
-          modifier = Modifier.size(14.dp),
-          tint = if (editMode) MaterialTheme.colorScheme.error
-          else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-        )
-      }
-    }
-    Spacer(Modifier.height(4.dp))
-
-    if (displayed.isEmpty()) {
-      Text(
-        text = "No transactions yet. Tell Ledger about a sale, purchase, or expense.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        modifier = Modifier.padding(vertical = 8.dp),
-      )
-    }
-
-    for ((index, tx) in displayed.withIndex()) {
-      Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        val typeColor = when (tx.transactionType) {
-          "sale", "income" -> Color(0xFF2E7D32)
-          else -> Color(0xFFC62828)
-        }
-        Column(modifier = Modifier.weight(1f)) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-              text = tx.item,
-              style = MaterialTheme.typography.bodySmall,
-              fontWeight = FontWeight.Medium,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.weight(1f, fill = false),
-            )
-            if (tx.confidence == "low" || tx.confidence == "medium") {
-              Spacer(Modifier.width(4.dp))
-              val dotColor = if (tx.confidence == "low") Color(0xFFC62828) else Color(0xFFE65100)
-              Icon(
-                Icons.Rounded.Warning,
-                contentDescription = "Confidence: ${tx.confidence}",
-                modifier = Modifier.size(10.dp),
-                tint = dotColor,
-              )
-            }
-          }
-          Text(
-            text = "${tx.transactionType}  ·  ${fmtQty(tx.quantity)} ${tx.unit}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-          )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-          text = if (numbersHidden) "••••" else "${tx.currency} ${formatAmount(tx.amount)}",
-          style = MaterialTheme.typography.bodySmall,
-          fontWeight = FontWeight.SemiBold,
-          color = if (numbersHidden) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f) else typeColor,
-        )
-        AnimatedVisibility(visible = editMode, enter = fadeIn(), exit = fadeOut()) {
-          IconButton(
-            onClick = { onDelete(tx.timestampMs) },
-            modifier = Modifier.size(28.dp).padding(start = 4.dp),
-          ) {
-            Icon(
-              Icons.Rounded.Delete,
-              contentDescription = "Delete transaction",
-              modifier = Modifier.size(14.dp),
-              tint = MaterialTheme.colorScheme.error,
-            )
-          }
-        }
-      }
-      if (index < displayed.size - 1) {
-        HorizontalDivider(
-          color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
-          modifier = Modifier.padding(vertical = 1.dp),
-        )
-      }
-    }
-    if (uiState.recentTransactions.size > 10) {
-      Text(
-        text = "+${uiState.recentTransactions.size - 10} more",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-        modifier = Modifier.padding(top = 4.dp),
-      )
-    }
-  }
-}
-
-@Composable
-private fun InventorySection(uiState: LedgerUiState) {
-  Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-    Text(
-      text = stringResource(R.string.inventory),
-      style = MaterialTheme.typography.labelMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-      modifier = Modifier.padding(bottom = 6.dp),
-    )
-    if (uiState.stockItemNames.isEmpty()) {
-      Text(
-        text = "No stock tracked yet. Tell Ledger about a restock or purchase to populate this.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-      )
-    }
-    for ((name, stock) in uiState.stockItemNames.zip(uiState.stockItems)) {
-      val isLow = name in uiState.lowStockItems
-      Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          text = name,
-          style = MaterialTheme.typography.bodySmall,
-          fontWeight = FontWeight.Medium,
-          modifier = Modifier.weight(1f),
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-          text = "${fmtQty(stock.quantity)} ${stock.unit}",
-          style = MaterialTheme.typography.bodySmall,
-          color = if (isLow) Color(0xFFE65100) else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (isLow) {
-          Spacer(Modifier.width(4.dp))
-          Icon(
-            Icons.Rounded.Warning,
-            contentDescription = stringResource(R.string.low_stock),
-            modifier = Modifier.size(13.dp),
-            tint = Color(0xFFE65100),
-          )
-        }
-      }
-      if (uiState.stockItemNames.indexOf(name) < uiState.stockItemNames.size - 1) {
-        HorizontalDivider(
-          color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
-          modifier = Modifier.padding(vertical = 1.dp),
-        )
-      }
-    }
-  }
-}
-
-@Composable
-private fun SummaryMetric(
-  label: String,
-  value: String,
-  valueColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-  trailingIcon: (@Composable () -> Unit)? = null,
-) {
-  Column(horizontalAlignment = Alignment.CenterHorizontally) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Text(
-        text = value,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = valueColor,
-      )
-      if (trailingIcon != null) {
-        Spacer(Modifier.width(2.dp))
-        trailingIcon()
-      }
-    }
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-    )
-  }
-}
-
-private fun formatAmount(amount: Double): String {
-  return if (amount == 0.0) "0"
-  else if (amount >= 1_000_000) String.format(Locale.US, "%.1fM", amount / 1_000_000)
-  else if (amount >= 1_000) String.format(Locale.US, "%.1fK", amount / 1_000)
-  else String.format(Locale.US, "%.0f", amount)
+private fun formatAmount(amount: Double): String = when {
+  amount >= 1_000_000 -> "%.1fM".format(amount / 1_000_000)
+  amount >= 1_000 -> "%.1fK".format(amount / 1_000)
+  else -> "%.0f".format(amount)
 }
 
 private fun fmtQty(v: Double): String =
   if (v == v.toLong().toDouble()) v.toLong().toString()
-  else String.format(Locale.US, "%.1f", v)
+  else "%.1f".format(v)

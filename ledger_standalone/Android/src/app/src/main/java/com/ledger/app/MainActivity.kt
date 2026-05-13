@@ -19,9 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ledger.app.data.Model
 import com.ledger.app.db.LedgerRepository
-import com.ledger.app.ui.ledger.LedgerMainScreen
 import com.ledger.app.ui.ledger.LedgerTools
 import com.ledger.app.ui.modelsetup.ModelSetupScreen
+import com.ledger.app.ui.nav.LedgerScaffold
 import com.ledger.app.ui.onboarding.OnboardingSheet
 import com.ledger.app.ui.onboarding.OnboardingViewModel
 import com.ledger.app.ui.theme.LedgerTheme
@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
               onModelReady = { model -> selectedModel = model }
             )
           } else {
-            LedgerMainScreen(
+            LedgerScaffold(
               model = selectedModel!!,
               stateFlow = stateFlow,
               ledgerTools = ledgerTools,

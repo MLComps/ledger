@@ -28,4 +28,7 @@ interface LedgerDao {
 
   @Query("DELETE FROM stock")
   suspend fun clearStock()
+
+  @Query("SELECT * FROM transactions WHERE timestampMs >= :sinceMs ORDER BY timestampMs ASC")
+  fun getTransactionsSince(sinceMs: Long): Flow<List<TransactionEntity>>
 }
