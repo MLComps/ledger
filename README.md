@@ -4,7 +4,7 @@ An on-device AI bookkeeping assistant for Android. Ledger uses Google's LiteRT-L
 
 You talk to Ledger in plain language (text, voice, SMS, or photo), and it extracts transactions and stock updates automatically, maintaining a running ledger with a live dashboard.
 
-Built for the [Gemma 3n Impact Challenge](https://www.kaggle.com/competitions/google-gemma-3n-hackathon) on Kaggle.
+Built for the [Gemma 4 Good Hackathon](https://www.kaggle.com/competitions/gemma-4-good-hackathon) on Kaggle.
 
 ---
 
