@@ -42,7 +42,6 @@ Models are downloaded from HuggingFace on first use. Gemma 4 is gated — a Hugg
 
 - Android Studio Meerkat or later
 - Android SDK 35, min SDK 31 (Android 12)
-- A HuggingFace account with Gemma 4 access ([request here](https://huggingface.co/google/gemma-4))
 
 ### Setup
 
@@ -52,20 +51,18 @@ Models are downloaded from HuggingFace on first use. Gemma 4 is gated — a Hugg
    cd ledger/ledger_standalone/Android/src
    ```
 
-2. Copy the secrets template and fill in your values:
+2. Copy the SDK path template:
    ```bash
    cp local.properties.example local.properties
    ```
-   Edit `local.properties`:
+   Edit `local.properties` and set your SDK path:
    ```properties
    sdk.dir=/path/to/your/Android/Sdk
-   HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    ```
-   `HF_TOKEN` is your HuggingFace [read token](https://huggingface.co/settings/tokens). It is injected at build time and used only for the initial model download — it is never stored on-device after the download completes.
 
 3. Open `ledger_standalone/Android/src` in Android Studio and run on a device or emulator (API 31+).
 
-4. On first launch, select a model and tap **Download**. Once downloaded, the model stays on-device.
+4. On first launch, select a model and tap **Download**. The `litert-community` model files are publicly hosted on HuggingFace — no account or token required. Once downloaded, the model stays on-device.
 
 ---
 
@@ -147,7 +144,6 @@ Real devices are strongly recommended for extended use.
 
 ## Roadmap
 
-- [ ] HuggingFace OAuth login flow (in-app token acquisition)
 - [ ] Multi-account / multi-business support
 - [ ] Background sync to Google Drive
 - [ ] Recurring transaction detection and reminders

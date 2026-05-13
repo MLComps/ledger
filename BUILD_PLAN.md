@@ -77,7 +77,7 @@ Goal: clean, shippable builds with proper secrets management and GitHub releases
 
 ### 5b — Features (partial)
 - [x] CSV export alongside PDF — `LedgerCsvExporter` produces UTF-8 CSV (Transactions, Summary, Inventory sections); grid icon button added to dashboard header
-- [ ] In-app HuggingFace OAuth login (replace manual token entry)
+- [x] Remove `HF_TOKEN` — `litert-community` models are publicly hosted; no account or token required; removed from `BuildConfig`, `DownloadRepository`, and `local.properties.example`
 - [ ] Multi-account / multi-business support (separate Room databases per account)
 - [ ] Background sync to Google Drive (WorkManager + Drive REST API)
 - [ ] Recurring transaction detection and reminder

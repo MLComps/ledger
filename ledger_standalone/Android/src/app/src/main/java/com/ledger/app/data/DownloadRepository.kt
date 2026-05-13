@@ -19,7 +19,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import com.ledger.app.BuildConfig
 import com.ledger.app.worker.DownloadWorker
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -76,10 +75,8 @@ class DefaultDownloadRepository(
           model.extraDataFiles.joinToString(",") { it.downloadFileName },
         )
     }
-    val accessToken = model.accessToken
-      ?: BuildConfig.HF_TOKEN.takeIf { it.isNotEmpty() }
-    if (accessToken != null) {
-      inputDataBuilder.putString(KEY_MODEL_DOWNLOAD_ACCESS_TOKEN, accessToken)
+    if (model.accessToken != null) {
+      inputDataBuilder.putString(KEY_MODEL_DOWNLOAD_ACCESS_TOKEN, model.accessToken)
     }
     val inputData = inputDataBuilder.build()
 

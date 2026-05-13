@@ -29,8 +29,6 @@ android {
     manifestPlaceholders["applicationName"] = "com.ledger.app.LedgerApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
 
-    buildConfigField("String", "HF_TOKEN", "\"${localProps.getProperty("HF_TOKEN", "")}\"")
-
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 

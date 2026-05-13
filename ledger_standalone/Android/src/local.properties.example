@@ -3,7 +3,3 @@
 
 # Android SDK path — set automatically by Android Studio
 sdk.dir=/path/to/your/Android/Sdk
-
-# HuggingFace access token — required to download gated models (e.g. Gemma)
-# Generate one at https://huggingface.co/settings/tokens (read-only scope is enough)
-HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
