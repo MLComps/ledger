@@ -118,28 +118,30 @@ class DownloadWorker(context: Context, params: WorkerParameters) :
               listOf(modelDir, version, "${file.fileName}.$TMP_FILE_EXT")
                 .joinToString(separator = File.separator),
             )
-            val outputFileBytes = outputTmpFile.length()
-            if (outputFileBytes > 0) {
-              connection.setRequestProperty("Range", "bytes=${outputFileBytes}-")
+            val existingBytes = outputTmpFile.length()
+            if (existingBytes > 0) {
+              connection.setRequestProperty("Range", "bytes=${existingBytes}-")
               connection.setRequestProperty("Accept-Encoding", "identity")
             }
             connection.connect()
 
-            if (connection.responseCode == HttpURLConnection.HTTP_OK ||
-              connection.responseCode == HttpURLConnection.HTTP_PARTIAL
-            ) {
-              val contentRange = connection.getHeaderField("Content-Range")
-              if (contentRange != null) {
-                val rangeParts = contentRange.substringAfter("bytes ").split("/")
-                val byteRange = rangeParts[0].split("-")
-                downloadedBytes += byteRange[0].toLong()
+            val responseCode = connection.responseCode
+            val resuming = responseCode == HttpURLConnection.HTTP_PARTIAL
+            when {
+              resuming -> {
+                // Server honoured Range — append to existing partial file
+                downloadedBytes += existingBytes
               }
-            } else {
-              throw IOException("HTTP error code: ${connection.responseCode}")
+              responseCode == HttpURLConnection.HTTP_OK -> {
+                // Server ignored Range and sent full file — discard partial, start fresh
+                if (outputTmpFile.exists()) outputTmpFile.delete()
+                downloadedBytes = 0L
+              }
+              else -> throw IOException("HTTP error code: $responseCode")
             }
 
             val inputStream = connection.inputStream
-            val outputStream = FileOutputStream(outputTmpFile, true)
+            val outputStream = FileOutputStream(outputTmpFile, resuming)
 
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             var bytesRead: Int
