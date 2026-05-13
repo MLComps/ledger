@@ -82,6 +82,7 @@ data class LedgerUiState(
   val lowStockItems: Set<String> = emptySet(),
   val isSpeaking: Boolean = false,
   val selectedCurrency: String = "KES",
+  val validationMode: String = "critical",
 )
 
 @HiltViewModel
@@ -100,7 +101,12 @@ constructor(
   private var lastModel: Model? = null
 
   init {
-    _uiState.update { it.copy(selectedCurrency = dataStoreRepository.readCurrencyCode()) }
+    _uiState.update {
+      it.copy(
+        selectedCurrency = dataStoreRepository.readCurrencyCode(),
+        validationMode = dataStoreRepository.readValidationMode(),
+      )
+    }
   }
 
   fun syncFromTools(tools: LedgerTools) {
@@ -138,6 +144,13 @@ constructor(
     }
     lastSystemPrompt = newSystemPrompt
     _uiState.update { it.copy(selectedCurrency = code) }
+  }
+
+  fun saveValidationMode(mode: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.saveValidationMode(mode)
+    }
+    _uiState.update { it.copy(validationMode = mode) }
   }
 
   fun exportPdf(context: Context, onDone: (Uri) -> Unit, onError: (String) -> Unit) {

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.GridOn
@@ -128,7 +129,8 @@ JSON schema:
       "currency": "<3-letter code e.g. KES RWF GHS NGN ZAR>",
       "quantity": <number>,
       "unit": "<kg pieces sack litre etc>",
-      "cost": <cost-of-goods, 0 if unknown>
+      "cost": <cost-of-goods, 0 if unknown>,
+      "confidence": "high" | "medium" | "low"
     }
   ],
   "stock_updates": [
@@ -147,6 +149,7 @@ Rules:
 - cost defaults to 0 if not mentioned
 - transaction_type="sale" or "income" when the vendor RECEIVES money; "purchase" or "expense" when the vendor PAYS money
 - For "paid 500 for previous sale", "customer paid", "received payment" → transaction_type="income"
+- confidence="high" when all details are explicit; "medium" when most details are clear but some were inferred; "low" when the transaction is ambiguous or key details were guessed
 - Output a single JSON object. Start your response with { and end with }. No other text."""
 
 @Composable
@@ -283,7 +286,26 @@ private fun LedgerMainUi(
   var showAudioPanel by remember { mutableStateOf(false) }
   var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
   var clearTextTrigger by remember { mutableLongStateOf(0L) }
+  var pendingTransactions by remember { mutableStateOf<List<PendingTransaction>>(emptyList()) }
   val tintColor = MaterialTheme.colorScheme.primary
+
+  fun handleResponse(response: String) {
+    val parsed = parseResponse(response, ledgerTools, uiState.selectedCurrency)
+    val mode = uiState.validationMode
+    val needsConfirm = parsed.filter { tx ->
+      when (mode) {
+        "all" -> true
+        "critical" -> tx.confidence == "low"
+        else -> false
+      }
+    }
+    val autoApply = parsed - needsConfirm.toSet()
+    autoApply.forEach { commitTransaction(it, ledgerTools) }
+    if (needsConfirm.isNotEmpty()) {
+      pendingTransactions = needsConfirm
+    }
+    viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
+  }
 
   val shareLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.StartActivityForResult()
@@ -327,10 +349,7 @@ private fun LedgerMainUi(
         model = model,
         sender = sender,
         body = body,
-        onDone = { response ->
-          applyJsonToLedger(response, ledgerTools)
-          viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
-        },
+        onDone = { response -> handleResponse(response) },
         onError = onError,
       )
     }
@@ -352,10 +371,7 @@ private fun LedgerMainUi(
         viewModel.sendImageMessage(
           model = model,
           uri = uri,
-          onDone = { response ->
-            applyJsonToLedger(response, ledgerTools)
-            viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
-          },
+          onDone = { response -> handleResponse(response) },
           onError = onError,
         )
       }
@@ -381,10 +397,7 @@ private fun LedgerMainUi(
     viewModel.sendImageMessage(
       model = model,
       uri = uri,
-      onDone = { response ->
-        applyJsonToLedger(response, ledgerTools)
-        viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
-      },
+      onDone = { response -> handleResponse(response) },
       onError = onError,
     )
   }
@@ -402,10 +415,7 @@ private fun LedgerMainUi(
     viewModel.sendWavFileMessage(
       model = model,
       uri = uri,
-      onDone = { response ->
-        applyJsonToLedger(response, ledgerTools)
-        viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
-      },
+      onDone = { response -> handleResponse(response) },
       onError = onError,
     )
   }
@@ -422,10 +432,7 @@ private fun LedgerMainUi(
     viewModel.sendMessage(
       model = model,
       text = text,
-      onDone = { response ->
-        applyJsonToLedger(response, ledgerTools)
-        viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
-      },
+      onDone = { response -> handleResponse(response) },
       onError = onError,
     )
   }
@@ -435,11 +442,19 @@ private fun LedgerMainUi(
     viewModel.sendAudioMessage(
       model = model,
       pcmBytes = pcmBytes,
-      onDone = { response ->
-        applyJsonToLedger(response, ledgerTools)
-        viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
-      },
+      onDone = { response -> handleResponse(response) },
       onError = onError,
+    )
+  }
+
+  if (pendingTransactions.isNotEmpty()) {
+    ConfirmTransactionsDialog(
+      transactions = pendingTransactions,
+      onConfirm = {
+        pendingTransactions.forEach { commitTransaction(it, ledgerTools) }
+        pendingTransactions = emptyList()
+      },
+      onDismiss = { pendingTransactions = emptyList() },
     )
   }
 
@@ -481,9 +496,29 @@ private fun LedgerMainUi(
           .fillMaxWidth()
           .padding(horizontal = 16.dp)
           .padding(bottom = 4.dp),
-        horizontalArrangement = Arrangement.End,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
       ) {
+        val validationLabel = when (uiState.validationMode) {
+          "all" -> "Validate: All"
+          "critical" -> "Validate: Low conf."
+          else -> "Validate: Off"
+        }
+        FilterChip(
+          selected = uiState.validationMode != "none",
+          onClick = {
+            val next = when (uiState.validationMode) {
+              "none" -> "critical"
+              "critical" -> "all"
+              else -> "none"
+            }
+            viewModel.saveValidationMode(next)
+          },
+          label = { Text(text = validationLabel, style = MaterialTheme.typography.labelSmall) },
+          leadingIcon = {
+            Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
+          },
+        )
         FilterChip(
           selected = smsPermissionGranted,
           onClick = {
@@ -707,34 +742,40 @@ private fun LedgerMainUi(
   }
 }
 
-private fun applyJsonToLedger(jsonStr: String, tools: LedgerTools) {
-  try {
-    // Find the outermost JSON object regardless of surrounding text/markdown
+data class PendingTransaction(
+  val item: String,
+  val amount: Double,
+  val currency: String,
+  val transactionType: String,
+  val cost: Double,
+  val quantity: Double,
+  val unit: String,
+  val confidence: String,
+  val timestampMs: Long = System.currentTimeMillis(),
+)
+
+/**
+ * Parses the model response. Stock updates are always applied immediately.
+ * Returns pending transactions — caller decides whether to confirm or auto-apply.
+ */
+private fun parseResponse(
+  jsonStr: String,
+  tools: LedgerTools,
+  defaultCurrency: String,
+): List<PendingTransaction> {
+  return try {
     val start = jsonStr.indexOf('{')
     val end = jsonStr.lastIndexOf('}')
     if (start == -1 || end == -1 || end <= start) {
       Log.w(TAG, "No JSON object found in response: $jsonStr")
-      return
+      return emptyList()
     }
     val json = JSONObject(jsonStr.substring(start, end + 1))
     val action = json.optString("action", "unknown")
     val transactions = json.optJSONArray("transactions")
     val stockUpdates = json.optJSONArray("stock_updates")
 
-    if (action == "add_transaction" && transactions != null) {
-      for (i in 0 until transactions.length()) {
-        val tx = transactions.getJSONObject(i)
-        tools.addTransaction(
-          item = tx.optString("item", "item"),
-          amount = tx.optDouble("amount", 0.0),
-          currency = tx.optString("currency", "KES"),
-          transactionType = tx.optString("transaction_type", "sale"),
-          cost = tx.optDouble("cost", 0.0),
-          quantity = tx.optDouble("quantity", 1.0),
-          unit = tx.optString("unit", "unit"),
-        )
-      }
-    }
+    // Stock updates always apply immediately — no validation needed
     if (stockUpdates != null) {
       for (i in 0 until stockUpdates.length()) {
         val upd = stockUpdates.getJSONObject(i)
@@ -745,9 +786,39 @@ private fun applyJsonToLedger(jsonStr: String, tools: LedgerTools) {
         )
       }
     }
+
+    if (action == "add_transaction" && transactions != null) {
+      (0 until transactions.length()).map { i ->
+        val tx = transactions.getJSONObject(i)
+        PendingTransaction(
+          item = tx.optString("item", "item"),
+          amount = tx.optDouble("amount", 0.0),
+          currency = tx.optString("currency", defaultCurrency),
+          transactionType = tx.optString("transaction_type", "sale"),
+          cost = tx.optDouble("cost", 0.0),
+          quantity = tx.optDouble("quantity", 1.0),
+          unit = tx.optString("unit", "unit"),
+          confidence = tx.optString("confidence", "high"),
+        )
+      }
+    } else emptyList()
   } catch (e: Exception) {
     Log.w(TAG, "Could not parse JSON response: $jsonStr", e)
+    emptyList()
   }
+}
+
+private fun commitTransaction(tx: PendingTransaction, tools: LedgerTools) {
+  tools.addTransaction(
+    item = tx.item,
+    amount = tx.amount,
+    currency = tx.currency,
+    transactionType = tx.transactionType,
+    cost = tx.cost,
+    quantity = tx.quantity,
+    unit = tx.unit,
+    confidence = tx.confidence,
+  )
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -971,6 +1042,85 @@ private fun LedgerDashboard(
 }
 
 @Composable
+private fun ConfirmTransactionsDialog(
+  transactions: List<PendingTransaction>,
+  onConfirm: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+          Icons.Rounded.Warning,
+          contentDescription = null,
+          tint = Color(0xFFE65100),
+          modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(if (transactions.size == 1) "Confirm Transaction" else "Confirm ${transactions.size} Transactions")
+      }
+    },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          text = "Low-confidence extraction — please verify before saving:",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        transactions.forEach { tx ->
+          Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+          ) {
+            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Text(
+                  text = tx.item,
+                  style = MaterialTheme.typography.bodySmall,
+                  fontWeight = FontWeight.SemiBold,
+                  modifier = Modifier.weight(1f),
+                )
+                val badgeColor = when (tx.confidence) {
+                  "low" -> Color(0xFFC62828)
+                  "medium" -> Color(0xFFE65100)
+                  else -> Color(0xFF2E7D32)
+                }
+                Text(
+                  text = tx.confidence,
+                  style = MaterialTheme.typography.labelSmall,
+                  color = badgeColor,
+                  fontWeight = FontWeight.Bold,
+                )
+              }
+              Text(
+                text = "${tx.transactionType}  ·  ${tx.currency} ${formatAmount(tx.amount)}  ·  ${fmtQty(tx.quantity)} ${tx.unit}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+        }
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text("Discard") }
+    },
+    confirmButton = {
+      Button(
+        onClick = onConfirm,
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+      ) {
+        Text("Save")
+      }
+    },
+  )
+}
+
+@Composable
 private fun DashboardEmptyState() {
   Column(
     modifier = Modifier
@@ -1126,13 +1276,26 @@ private fun TransactionSection(uiState: LedgerUiState, onDelete: (Long) -> Unit)
           else -> Color(0xFFC62828)
         }
         Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = tx.item,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+              text = tx.item,
+              style = MaterialTheme.typography.bodySmall,
+              fontWeight = FontWeight.Medium,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f, fill = false),
+            )
+            if (tx.confidence == "low" || tx.confidence == "medium") {
+              Spacer(Modifier.width(4.dp))
+              val dotColor = if (tx.confidence == "low") Color(0xFFC62828) else Color(0xFFE65100)
+              Icon(
+                Icons.Rounded.Warning,
+                contentDescription = "Confidence: ${tx.confidence}",
+                modifier = Modifier.size(10.dp),
+                tint = dotColor,
+              )
+            }
+          }
           Text(
             text = "${tx.transactionType}  ·  ${fmtQty(tx.quantity)} ${tx.unit}",
             style = MaterialTheme.typography.labelSmall,

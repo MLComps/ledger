@@ -15,6 +15,7 @@ class LedgerRepository(private val dao: LedgerDao) {
     cost: Double,
     quantity: Double,
     unit: String,
+    confidence: String = "high",
     timestampMs: Long = System.currentTimeMillis(),
   ) = dao.insertTransaction(
     TransactionEntity(
@@ -25,6 +26,7 @@ class LedgerRepository(private val dao: LedgerDao) {
       cost = cost,
       quantity = quantity,
       unit = unit,
+      confidence = confidence,
       timestampMs = timestampMs,
     )
   )

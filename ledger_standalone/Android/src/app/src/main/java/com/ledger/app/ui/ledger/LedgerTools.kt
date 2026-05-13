@@ -19,6 +19,7 @@ data class LedgerEntry(
   val cost: Double,
   val quantity: Double,
   val unit: String,
+  val confidence: String = "high",
   val timestampMs: Long = System.currentTimeMillis(),
 )
 
@@ -41,8 +42,9 @@ class LedgerTools(
     @ToolParam(description = "Cost of goods (0 if not applicable)") cost: Double = 0.0,
     @ToolParam(description = "Quantity") quantity: Double = 1.0,
     @ToolParam(description = "Unit e.g. kg, pieces, sack") unit: String = "unit",
+    confidence: String = "high",
   ): Map<String, Any> {
-    Log.d(TAG, "addTransaction: item=$item amount=$amount currency=$currency type=$transactionType")
+    Log.d(TAG, "addTransaction: item=$item amount=$amount currency=$currency type=$transactionType confidence=$confidence")
     val ts = System.currentTimeMillis()
     val entry =
       LedgerEntry(
@@ -53,6 +55,7 @@ class LedgerTools(
         cost = cost,
         quantity = quantity,
         unit = unit,
+        confidence = confidence,
         timestampMs = ts,
       )
     entries.add(entry)
@@ -67,6 +70,7 @@ class LedgerTools(
         cost = cost,
         quantity = quantity,
         unit = unit,
+        confidence = confidence,
         timestampMs = ts,
       )
     }

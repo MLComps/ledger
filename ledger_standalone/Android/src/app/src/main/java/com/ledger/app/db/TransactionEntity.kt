@@ -13,5 +13,6 @@ data class TransactionEntity(
   val cost: Double,
   val quantity: Double,
   val unit: String,
+  val confidence: String = "high",
   val timestampMs: Long = System.currentTimeMillis(),
 )
