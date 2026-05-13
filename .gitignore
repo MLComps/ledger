@@ -1,0 +1,34 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+scripts/.venv/
+
+# IDE
+.idea/
+
+# Python version pin (machine-local)
+.python-version
+
+# ML model binaries — too large for GitHub (use separate storage)
+scripts/models/
+test_files/piper_models/*.onnx
+
+# Large test assets
+test_files/test_files/audio.zip
+
+# Scratch/output files
+scripts/test.ipynb
+files/
+
+# Secrets — never commit
+.env
+.env.*
+local.properties
+secrets.properties
