@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.android)
@@ -6,6 +8,11 @@ plugins {
   alias(libs.plugins.hilt.application)
   alias(libs.plugins.ksp)
   kotlin("kapt")
+}
+
+val localProps = Properties().apply {
+  val f = rootProject.file("local.properties")
+  if (f.exists()) load(f.inputStream())
 }
 
 android {
@@ -19,9 +26,13 @@ android {
     versionCode = 1
     versionName = "1.0.0"
 
-    manifestPlaceholders["appAuthRedirectScheme"] = "com.ledger.app"
+    val redirectScheme = localProps.getProperty("REDIRECT_URL_SCHEME", "com.ledger.app")
+    manifestPlaceholders["appAuthRedirectScheme"] = redirectScheme
     manifestPlaceholders["applicationName"] = "com.ledger.app.LedgerApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
+
+    buildConfigField("String", "HF_TOKEN", "\"${localProps.getProperty("HF_TOKEN", "")}\"")
+    buildConfigField("String", "REDIRECT_URL_SCHEME", "\"$redirectScheme\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
