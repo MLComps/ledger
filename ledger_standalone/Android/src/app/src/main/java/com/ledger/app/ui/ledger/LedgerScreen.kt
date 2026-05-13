@@ -111,7 +111,7 @@ import org.json.JSONObject
 
 private const val TAG = "LedgerScreen"
 
-private const val SYSTEM_PROMPT =
+private fun buildSystemPrompt(currency: String) =
   """You are Ledger, an offline bookkeeping assistant for market vendors.
 
 For every input — whether typed text, spoken audio, or image — extract any financial transaction or stock update mentioned, then respond with ONLY a valid JSON object. Output no other text.
@@ -142,7 +142,7 @@ Rules:
 - action="get_health" when asked for totals, summary, or financial health
 - action="unknown" if no financial action is found
 - transactions and stock_updates may be empty arrays []
-- currency defaults to KES if not mentioned
+- currency defaults to $currency if not mentioned
 - cost defaults to 0 if not mentioned
 - transaction_type="sale" or "income" when the vendor RECEIVES money; "purchase" or "expense" when the vendor PAYS money
 - For "paid 500 for previous sale", "customer paid", "received payment" → transaction_type="income"
@@ -170,7 +170,7 @@ fun LedgerMainScreen(
     viewModel.initModel(
       context = context,
       model = model,
-      systemPrompt = SYSTEM_PROMPT,
+      systemPrompt = buildSystemPrompt(uiState.selectedCurrency),
       onError = { error ->
         errorDialogContent = error
         showErrorDialog = true
@@ -252,7 +252,7 @@ fun LedgerMainScreen(
             viewModel.resetEngine(
               context = context,
               model = model,
-              systemPrompt = SYSTEM_PROMPT,
+              systemPrompt = buildSystemPrompt(uiState.selectedCurrency),
               onError = { errorDialogContent = it; showErrorDialog = true },
             )
           },
@@ -455,6 +455,9 @@ private fun LedgerMainUi(
         onExportPdf = { exportAndShare() },
         onSpeakToggle = { speakOrStop() },
         onDeleteTransaction = { ts -> viewModel.deleteTransaction(ts, ledgerTools) },
+        onCurrencyChange = { code ->
+          viewModel.saveCurrency(code, buildSystemPrompt(code))
+        },
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
       )
 
@@ -736,15 +739,71 @@ private fun applyJsonToLedger(jsonStr: String, tools: LedgerTools) {
 
 private enum class DashboardSection { TRANSACTIONS, INVENTORY }
 
+private val SUPPORTED_CURRENCIES = listOf(
+  "KES" to "Kenya Shilling",
+  "NGN" to "Nigeria Naira",
+  "GHS" to "Ghana Cedi",
+  "UGX" to "Uganda Shilling",
+  "TZS" to "Tanzania Shilling",
+  "ETB" to "Ethiopia Birr",
+  "ZAR" to "South Africa Rand",
+  "RWF" to "Rwanda Franc",
+  "USD" to "US Dollar",
+  "EUR" to "Euro",
+  "GBP" to "British Pound",
+)
+
 @Composable
 private fun LedgerDashboard(
   uiState: LedgerUiState,
   onExportPdf: () -> Unit,
   onSpeakToggle: () -> Unit,
   onDeleteTransaction: (Long) -> Unit,
+  onCurrencyChange: (String) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var expanded by remember { mutableStateOf<DashboardSection?>(null) }
+  var showCurrencyPicker by remember { mutableStateOf(false) }
+
+  if (showCurrencyPicker) {
+    AlertDialog(
+      onDismissRequest = { showCurrencyPicker = false },
+      title = { Text("Select Currency") },
+      text = {
+        Column {
+          SUPPORTED_CURRENCIES.forEach { (code, name) ->
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                  onCurrencyChange(code)
+                  showCurrencyPicker = false
+                }
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Text(
+                text = code,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (code == uiState.selectedCurrency) FontWeight.Bold else FontWeight.Normal,
+                color = if (code == uiState.selectedCurrency) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.width(48.dp),
+              )
+              Text(
+                text = name,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = { showCurrencyPicker = false }) { Text("Close") }
+      },
+    )
+  }
   val hasTransactions = uiState.recentTransactions.isNotEmpty()
   val hasStock = uiState.stockItemNames.isNotEmpty()
 
@@ -782,6 +841,18 @@ private fun LedgerDashboard(
             },
           )
           SummaryMetric(label = "Txns", value = uiState.transactionCount.toString())
+        }
+        TextButton(
+          onClick = { showCurrencyPicker = true },
+          modifier = Modifier.height(36.dp),
+          contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        ) {
+          Text(
+            text = uiState.selectedCurrency,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+          )
         }
         IconButton(
           onClick = onSpeakToggle,

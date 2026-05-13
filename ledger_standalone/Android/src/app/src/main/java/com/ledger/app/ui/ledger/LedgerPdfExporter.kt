@@ -20,11 +20,11 @@ object LedgerPdfExporter {
   private const val MARGIN = 48f
   private const val LINE_HEIGHT = 16f
 
-  fun export(context: Context, state: LedgerUiState): Uri {
+  fun export(context: Context, state: LedgerUiState, currency: String = "KES"): Uri {
     val document = PdfDocument()
     val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH.toInt(), PAGE_HEIGHT.toInt(), 1).create()
     val page = document.startPage(pageInfo)
-    drawPage(page.canvas, state)
+    drawPage(page.canvas, state, currency)
     document.finishPage(page)
 
     val dir = File(context.cacheDir, "reports").also { it.mkdirs() }
@@ -36,7 +36,7 @@ object LedgerPdfExporter {
     return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
   }
 
-  private fun drawPage(canvas: Canvas, state: LedgerUiState) {
+  private fun drawPage(canvas: Canvas, state: LedgerUiState, currency: String) {
     val titlePaint = paint(20f, Color.parseColor("#1565C0"), bold = true)
     val headingPaint = paint(13f, Color.parseColor("#212121"), bold = true)
     val bodyPaint = paint(11f, Color.parseColor("#424242"))
@@ -62,11 +62,11 @@ object LedgerPdfExporter {
     // Summary
     canvas.drawText("Financial Summary", MARGIN, y, headingPaint); y += LINE_HEIGHT + 4f
 
-    metricRow(canvas, y, "Revenue", fmt(state.revenue), bodyPaint, bodyPaint)
+    metricRow(canvas, y, "Revenue", "$currency ${fmt(state.revenue)}", bodyPaint, bodyPaint)
     y += LINE_HEIGHT
-    metricRow(canvas, y, "Total Cost", fmt(state.totalCost), bodyPaint, bodyPaint)
+    metricRow(canvas, y, "Total Cost", "$currency ${fmt(state.totalCost)}", bodyPaint, bodyPaint)
     y += LINE_HEIGHT
-    metricRow(canvas, y, "Net Profit", fmt(state.netProfit), bodyPaint, if (state.netProfit >= 0) greenPaint else redPaint)
+    metricRow(canvas, y, "Net Profit", "$currency ${fmt(state.netProfit)}", bodyPaint, if (state.netProfit >= 0) greenPaint else redPaint)
     y += LINE_HEIGHT
     metricRow(canvas, y, "Transactions", state.transactionCount.toString(), bodyPaint, bodyPaint)
     y += LINE_HEIGHT + 14f

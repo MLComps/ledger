@@ -13,6 +13,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ledger.app.R
 import com.ledger.app.data.BuiltInTaskId
+import com.ledger.app.data.DataStoreRepository
 import com.ledger.app.data.Model
 import com.ledger.app.data.SAMPLE_RATE
 import com.ledger.app.llm.LlmChatModelHelper
@@ -80,12 +81,16 @@ data class LedgerUiState(
   val recentTransactions: List<LedgerEntry> = listOf(),
   val lowStockItems: Set<String> = emptySet(),
   val isSpeaking: Boolean = false,
+  val selectedCurrency: String = "KES",
 )
 
 @HiltViewModel
 class LedgerViewModel
 @Inject
-constructor(@ApplicationContext private val context: Context) : ViewModel() {
+constructor(
+  @ApplicationContext private val context: Context,
+  private val dataStoreRepository: DataStoreRepository,
+) : ViewModel() {
   private val _uiState = MutableStateFlow(LedgerUiState())
   val uiState = _uiState.asStateFlow()
 
@@ -93,6 +98,10 @@ constructor(@ApplicationContext private val context: Context) : ViewModel() {
   private val autoResetThreshold = 8
   private var lastSystemPrompt: String = ""
   private var lastModel: Model? = null
+
+  init {
+    _uiState.update { it.copy(selectedCurrency = dataStoreRepository.readCurrencyCode()) }
+  }
 
   fun syncFromTools(tools: LedgerTools) {
     val (revenue, cogs, purchases, count, stockItems, stockItemNames, recentTransactions, lowStockItems) =
@@ -123,11 +132,19 @@ constructor(@ApplicationContext private val context: Context) : ViewModel() {
     }
   }
 
+  fun saveCurrency(code: String, newSystemPrompt: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.saveCurrencyCode(code)
+    }
+    lastSystemPrompt = newSystemPrompt
+    _uiState.update { it.copy(selectedCurrency = code) }
+  }
+
   fun exportPdf(context: Context, onDone: (Uri) -> Unit, onError: (String) -> Unit) {
     val snapshot = _uiState.value
     viewModelScope.launch(Dispatchers.IO) {
       try {
-        val uri = LedgerPdfExporter.export(context, snapshot)
+        val uri = LedgerPdfExporter.export(context, snapshot, snapshot.selectedCurrency)
         withContext(Dispatchers.Main) { onDone(uri) }
       } catch (e: Exception) {
         Log.e(TAG, "PDF export failed", e)
@@ -537,15 +554,16 @@ constructor(@ApplicationContext private val context: Context) : ViewModel() {
 
 private fun buildTtsSummary(state: LedgerUiState): String {
   if (state.transactionCount == 0) return "No transactions recorded yet. Start by telling me what you sold today."
+  val ccy = state.selectedCurrency
   val sb = StringBuilder("Here is your Ledger summary. ")
   sb.append("You recorded ${state.transactionCount} transaction${if (state.transactionCount != 1) "s" else ""}. ")
-  sb.append("Revenue: ${fmtTts(state.revenue)}. ")
-  sb.append("Total cost: ${fmtTts(state.totalCost)}. ")
+  sb.append("Revenue: $ccy ${fmtTts(state.revenue)}. ")
+  sb.append("Total cost: $ccy ${fmtTts(state.totalCost)}. ")
   if (state.netProfit >= 0) {
-    sb.append("Net profit: ${fmtTts(state.netProfit)}. ")
+    sb.append("Net profit: $ccy ${fmtTts(state.netProfit)}. ")
     if (state.netProfit > 0) sb.append("Good work today! ")
   } else {
-    sb.append("Net loss: ${fmtTts(-state.netProfit)}. Consider reviewing your expenses. ")
+    sb.append("Net loss: $ccy ${fmtTts(-state.netProfit)}. Consider reviewing your expenses. ")
   }
   if (state.lowStockItems.isNotEmpty()) {
     val names = state.lowStockItems.take(3).joinToString(", ")

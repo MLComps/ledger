@@ -14,15 +14,18 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 interface DataStoreRepository {
   fun saveTextInputHistory(history: List<String>)
   fun readTextInputHistory(): List<String>
+  fun saveCurrencyCode(code: String)
+  fun readCurrencyCode(): String
 }
 
 class DefaultDataStoreRepository(private val context: Context) : DataStoreRepository {
   private val KEY_TEXT_HISTORY = stringPreferencesKey("text_input_history")
+  private val KEY_CURRENCY_CODE = stringPreferencesKey("currency_code")
 
   override fun saveTextInputHistory(history: List<String>) {
     runBlocking {
       context.dataStore.edit { prefs ->
-        prefs[KEY_TEXT_HISTORY] = history.joinToString("")
+        prefs[KEY_TEXT_HISTORY] = history.joinToString("")
       }
     }
   }
@@ -30,7 +33,19 @@ class DefaultDataStoreRepository(private val context: Context) : DataStoreReposi
   override fun readTextInputHistory(): List<String> {
     return runBlocking {
       val prefs = context.dataStore.data.first()
-      prefs[KEY_TEXT_HISTORY]?.split("")?.filter { it.isNotEmpty() } ?: emptyList()
+      prefs[KEY_TEXT_HISTORY]?.split("")?.filter { it.isNotEmpty() } ?: emptyList()
+    }
+  }
+
+  override fun saveCurrencyCode(code: String) {
+    runBlocking {
+      context.dataStore.edit { prefs -> prefs[KEY_CURRENCY_CODE] = code }
+    }
+  }
+
+  override fun readCurrencyCode(): String {
+    return runBlocking {
+      context.dataStore.data.first()[KEY_CURRENCY_CODE] ?: "KES"
     }
   }
 }
