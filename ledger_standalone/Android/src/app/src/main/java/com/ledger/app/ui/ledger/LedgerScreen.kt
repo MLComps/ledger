@@ -888,50 +888,111 @@ private fun LedgerDashboard(
         }
       }
 
-      // Section toggles
       HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-      Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        SectionToggle(
-          label = if (hasTransactions) "Transactions (${uiState.recentTransactions.size})" else "Transactions",
-          icon = { Icon(Icons.Rounded.Receipt, null, modifier = Modifier.size(14.dp)) },
-          selected = expanded == DashboardSection.TRANSACTIONS,
-          onClick = {
-            expanded = if (expanded == DashboardSection.TRANSACTIONS) null else DashboardSection.TRANSACTIONS
-          },
-          modifier = Modifier.weight(1f),
-        )
-        val lowCount = uiState.lowStockItems.size
-        SectionToggle(
-          label = if (lowCount > 0) "Inventory ⚠ $lowCount" else if (hasStock) "Inventory (${uiState.stockItemNames.size})" else "Inventory",
-          icon = { Icon(Icons.Rounded.Inventory2, null, modifier = Modifier.size(14.dp)) },
-          selected = expanded == DashboardSection.INVENTORY,
-          onClick = {
-            expanded = if (expanded == DashboardSection.INVENTORY) null else DashboardSection.INVENTORY
-          },
-          modifier = Modifier.weight(1f),
-          warn = lowCount > 0,
-        )
-      }
 
-      // Expanded section content
-      AnimatedVisibility(
-        visible = expanded != null,
-        enter = expandVertically() + fadeIn(),
-        exit = shrinkVertically() + fadeOut(),
-      ) {
-        Column {
-          HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-          when (expanded) {
-            DashboardSection.TRANSACTIONS -> TransactionSection(uiState, onDeleteTransaction)
-            DashboardSection.INVENTORY -> InventorySection(uiState)
-            null -> {}
+      if (!hasTransactions && !hasStock) {
+        DashboardEmptyState()
+      } else {
+        // Section toggles
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          SectionToggle(
+            label = if (hasTransactions) "Transactions (${uiState.recentTransactions.size})" else "Transactions",
+            icon = { Icon(Icons.Rounded.Receipt, null, modifier = Modifier.size(14.dp)) },
+            selected = expanded == DashboardSection.TRANSACTIONS,
+            onClick = {
+              expanded = if (expanded == DashboardSection.TRANSACTIONS) null else DashboardSection.TRANSACTIONS
+            },
+            modifier = Modifier.weight(1f),
+          )
+          val lowCount = uiState.lowStockItems.size
+          SectionToggle(
+            label = if (lowCount > 0) "Inventory ⚠ $lowCount" else if (hasStock) "Inventory (${uiState.stockItemNames.size})" else "Inventory",
+            icon = { Icon(Icons.Rounded.Inventory2, null, modifier = Modifier.size(14.dp)) },
+            selected = expanded == DashboardSection.INVENTORY,
+            onClick = {
+              expanded = if (expanded == DashboardSection.INVENTORY) null else DashboardSection.INVENTORY
+            },
+            modifier = Modifier.weight(1f),
+            warn = lowCount > 0,
+          )
+        }
+
+        // Expanded section content
+        AnimatedVisibility(
+          visible = expanded != null,
+          enter = expandVertically() + fadeIn(),
+          exit = shrinkVertically() + fadeOut(),
+        ) {
+          Column {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            when (expanded) {
+              DashboardSection.TRANSACTIONS -> TransactionSection(uiState, onDeleteTransaction)
+              DashboardSection.INVENTORY -> InventorySection(uiState)
+              null -> {}
+            }
           }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun DashboardEmptyState() {
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(vertical = 24.dp, horizontal = 16.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Icon(
+      imageVector = Icons.Rounded.Receipt,
+      contentDescription = null,
+      modifier = Modifier.size(40.dp),
+      tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+    )
+    Text(
+      text = "Nothing recorded yet",
+      style = MaterialTheme.typography.titleSmall,
+      fontWeight = FontWeight.SemiBold,
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+    )
+    Text(
+      text = "Tell Ledger what you sold, purchased, or spent today",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
+    Spacer(Modifier.height(4.dp))
+    Row(
+      horizontalArrangement = Arrangement.spacedBy(16.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      HintIcon(icon = Icons.Rounded.Mic, label = "Voice")
+      HintIcon(icon = Icons.Rounded.PhotoCamera, label = "Photo")
+      HintIcon(icon = Icons.Rounded.Sms, label = "SMS")
+    }
+  }
+}
+
+@Composable
+private fun HintIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+  Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Icon(
+      imageVector = icon,
+      contentDescription = null,
+      modifier = Modifier.size(18.dp),
+      tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+    )
+    Text(
+      text = label,
+      style = MaterialTheme.typography.labelSmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+    )
   }
 }
 
@@ -1015,6 +1076,15 @@ private fun TransactionSection(uiState: LedgerUiState, onDelete: (Long) -> Unit)
       }
     }
     Spacer(Modifier.height(4.dp))
+
+    if (displayed.isEmpty()) {
+      Text(
+        text = "No transactions yet. Tell Ledger about a sale, purchase, or expense.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.padding(vertical = 8.dp),
+      )
+    }
 
     for ((index, tx) in displayed.withIndex()) {
       Row(
