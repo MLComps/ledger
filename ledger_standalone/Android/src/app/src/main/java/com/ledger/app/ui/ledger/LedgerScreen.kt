@@ -35,6 +35,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -55,13 +56,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GridOn
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Refresh
@@ -87,6 +91,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -99,11 +105,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -129,9 +138,12 @@ import com.ledger.app.ui.common.chat.AudioRecorderPanel
 import com.ledger.app.ui.common.chat.ChatMessageText
 import com.ledger.app.ui.common.chat.ChatMessageWarning
 import com.ledger.app.ui.common.chat.ChatSide
+import com.ledger.app.ui.common.SensoryBackground
 import com.ledger.app.ui.theme.LocalPrivacyMode
+import com.ledger.app.common.HapticManager
 import java.io.File
 import java.util.Locale
+import java.util.Calendar
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONObject
 
@@ -204,7 +216,9 @@ fun LedgerMainScreen(
     )
   }
 
-  Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).imePadding()) {
+  Box(modifier = Modifier.fillMaxSize().imePadding()) {
+    SensoryBackground(isProfit = uiState.netProfit >= 0)
+    
     if (!uiState.isModelInitialized) {
       Column(
         modifier = Modifier.fillMaxSize(),
@@ -280,6 +294,7 @@ private fun LedgerMainUi(
   val uiState by viewModel.uiState.collectAsState()
   val scrollState = rememberScrollState()
   val context = LocalContext.current
+  val hapticManager = remember { HapticManager(context) }
   val privacyMode = LocalPrivacyMode.current
   var inputText by remember { mutableStateOf("") }
   var showAudioPanel by remember { mutableStateOf(false) }
@@ -287,9 +302,21 @@ private fun LedgerMainUi(
   var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
   var curAmplitude by remember { mutableIntStateOf(0) }
   var pendingTransactions by remember { mutableStateOf<List<PendingTransaction>>(emptyList()) }
+  var showRitualSummary by remember { mutableStateOf(false) }
 
   fun handleResponse(response: String) {
     val parsed = parseResponse(response, ledgerTools, uiState.selectedCurrency)
+    
+    // Extract human-friendly message from JSON
+    val displayMessage = try {
+      val start = response.indexOf('{')
+      val end = response.lastIndexOf('}')
+      if (start != -1 && end != -1) {
+        val json = JSONObject(response.substring(start, end + 1))
+        json.optString("message", "Transaction recorded.")
+      } else response
+    } catch (e: Exception) { "Transaction recorded." }
+
     val mode = uiState.validationMode
     val needsConfirm = parsed.filter { tx ->
       when (mode) {
@@ -299,9 +326,14 @@ private fun LedgerMainUi(
       }
     }
     val autoApply = parsed - needsConfirm.toSet()
-    autoApply.forEach { commitTransaction(it, ledgerTools) }
+    autoApply.forEach { 
+      commitTransaction(it, ledgerTools)
+      if (it.transactionType == "sale" || it.transactionType == "income") hapticManager.playSaleClink()
+      else hapticManager.playExpenseThud()
+    }
     if (needsConfirm.isNotEmpty()) pendingTransactions = needsConfirm
-    viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
+    
+    viewModel.addMessage(ChatMessageText(content = displayMessage, side = ChatSide.AGENT))
   }
 
   if (pendingTransactions.isNotEmpty()) {
@@ -396,28 +428,70 @@ private fun LedgerMainUi(
       )
     ) {
       // ── Hero balance card ─────────────────────────────────────────────────
-      HeroBalanceCard(
-        uiState = uiState,
-        privacyModeEnabled = privacyMode.value,
-        onTogglePrivacy = { privacyMode.value = !privacyMode.value },
-        onExportPdf = { exportAndShare() },
-        onExportCsv = {
-          viewModel.exportCsv(
-            context = context,
-            onDone = { uri ->
-              val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/csv"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-              }
-              shareLauncher.launch(Intent.createChooser(intent, context.getString(R.string.share_report)))
+      Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        HeroBalanceCard(
+          uiState = uiState,
+          privacyModeEnabled = privacyMode.value,
+          onTogglePrivacy = { privacyMode.value = !privacyMode.value },
+          onExportPdf = { exportAndShare() },
+          onExportCsv = {
+            viewModel.exportCsv(
+              context = context,
+              onDone = { uri ->
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                  type = "text/csv"
+                  putExtra(Intent.EXTRA_STREAM, uri)
+                  addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                shareLauncher.launch(Intent.createChooser(intent, context.getString(R.string.share_report)))
+              },
+              onError = onError,
+            )
+          },
+          onSpeakToggle = { if (uiState.isSpeaking) viewModel.stopSpeaking() else viewModel.speakSummary(onError = onError) },
+        )
+
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val (fabLabel, fabIcon) = remember(currentHour) {
+          when (currentHour) {
+            in 6..10 -> "Restock" to Icons.Rounded.Inventory2
+            in 20..23, in 0..5 -> "Close Day" to Icons.Rounded.History
+            else -> "Quick Sale" to Icons.Rounded.Add
+          }
+        }
+
+        Box(modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
+          Button(
+            onClick = {
+              hapticManager.playTick()
+              if (fabLabel == "Close Day") showRitualSummary = true
+              else if (fabLabel == "Restock") inputText = "Restocked "
+              else inputText = "Sold "
             },
-            onError = onError,
-          )
-        },
-        onSpeakToggle = { if (uiState.isSpeaking) viewModel.stopSpeaking() else viewModel.speakSummary(onError = onError) },
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-      )
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+              containerColor = Color.White.copy(alpha = 0.25f),
+              contentColor = Color.White
+            ),
+            modifier = Modifier.height(32.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+          ) {
+            Icon(fabIcon, null, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(fabLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+
+      if (showRitualSummary) {
+        com.ledger.app.ui.common.RitualSummaryDialog(
+          onDismiss = { showRitualSummary = false },
+          onShare = { showRitualSummary = false; exportAndShare() },
+          revenue = "${uiState.selectedCurrency} ${formatAmount(uiState.revenue)}",
+          profit = "${uiState.selectedCurrency} ${formatAmount(uiState.netProfit)}",
+          txCount = uiState.transactionCount
+        )
+      }
 
       // ── Control chips ─────────────────────────────────────────────────────
       Row(
@@ -477,6 +551,31 @@ private fun LedgerMainUi(
           Row(modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 4.dp), horizontalArrangement = Arrangement.Start) {
             ThinkingBubble()
           }
+        }
+      }
+
+      // ── Quick action chips ───────────────────────────────────────────────
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        listOf("💰 Sale", "💸 Expense", "📦 Stock", "📊 Summary").forEach { action ->
+          SuggestionChip(
+            onClick = {
+              hapticManager.playTick()
+              when(action) {
+                "💰 Sale" -> inputText = "Sold "
+                "💸 Expense" -> inputText = "I spent "
+                "📦 Stock" -> inputText = "Restocked "
+                "📊 Summary" -> processText("Give me a summary of my business today")
+              }
+            },
+            label = { Text(action, style = MaterialTheme.typography.labelSmall) },
+            shape = CircleShape,
+            colors = SuggestionChipDefaults.suggestionChipColors(
+              containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+          )
         }
       }
 
@@ -769,18 +868,41 @@ private fun ChatBubble(message: ChatMessageText, onDelete: () -> Unit) {
           ),
           colors = CardDefaults.cardColors(
             containerColor = if (isUser) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.surfaceVariant,
+            else MaterialTheme.colorScheme.surface.copy(alpha = 0.4f),
           ),
-          modifier = if (!isUser) Modifier.clickable { showMenu = true } else Modifier,
-          elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+          modifier = (if (!isUser) Modifier.clickable { showMenu = true } else Modifier)
+            .then(
+              if (!isUser) Modifier
+                .blur(30.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .background(
+                  Brush.verticalGradient(
+                    colors = listOf(
+                      Color.White.copy(alpha = 0.15f),
+                      Color.White.copy(alpha = 0.05f)
+                    )
+                  ),
+                  RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+                )
+                .border(
+                  width = 1.dp,
+                  brush = Brush.verticalGradient(
+                    colors = listOf(
+                      Color.White.copy(alpha = 0.3f),
+                      Color.White.copy(alpha = 0.1f)
+                    )
+                  ),
+                  shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+                )
+              else Modifier
+            ),
+          elevation = CardDefaults.cardElevation(defaultElevation = if (isUser) 2.dp else 0.dp),
         ) {
           Text(
             text = message.content,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             color = if (isUser) MaterialTheme.colorScheme.onPrimary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-            style = if (isUser) MaterialTheme.typography.bodyMedium
-            else MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+            else MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyMedium,
           )
         }
 

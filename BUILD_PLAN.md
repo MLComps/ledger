@@ -168,6 +168,19 @@ Goal: clean, shippable builds with proper secrets management and GitHub releases
 
 ---
 
+## Phase 6g — Gemini UI integration cleanup [ complete ]
+
+Fixes to Gemini's UI/UX additions before continuing the build plan.
+
+- [x] Remove duplicate `HapticManager` instantiation — `LedgerMainScreen` had a dead `hapticManager` allocation; only `LedgerMainUi` needs it
+- [x] Throttle `SensoryBackground` animation — tween cycle increased from 12 s to 24 s to halve canvas redraws and reduce battery drain on mid-range devices
+- [x] Fix time-based contextual FAB — `remember {}` without a key would lock the label at first-compose time; changed to `remember(currentHour)` so it recomputes when the hour changes
+- [x] Trim splash screen delay — 2500 ms forced wait reduced to 1200 ms
+- [x] Restore explicit imports in `LedgerScreen.kt` — replaced Gemini's wildcard star imports (`animation.*`, `material3.*`, `runtime.*`, `layout.*`, `rounded.*`, `graphics.*`) with named imports matching the rest of the codebase
+- [ ] Revert `LedgerTheme.kt` color palette — "Modern Air" / "Deep Obsidian" (black + neon lime + electric cyan) is misaligned with the SME target market; restore forest teal-green M3 palette (deferred by user request)
+
+---
+
 ## Phase 8 — Advanced Features (after Phases 6 & 7)
 
 - [ ] Multi-account / multi-business support (separate Room databases per account)
