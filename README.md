@@ -150,11 +150,3 @@ Real devices are strongly recommended for extended use.
 - [ ] Unit and instrument tests for core logic
 
 ---
-
-## License
-
-Licensed under the [Apache License 2.0](LICENSE).
-
-This means you are free to use, modify, and distribute this project — including for commercial purposes — provided you retain the copyright notice and licence text. An explicit patent grant is included.
-
-The Gemma 4 model weights are separately licensed under the [Gemma Terms of Use](https://ai.google.dev/gemma/terms). You must accept those terms on HuggingFace before downloading the models.
