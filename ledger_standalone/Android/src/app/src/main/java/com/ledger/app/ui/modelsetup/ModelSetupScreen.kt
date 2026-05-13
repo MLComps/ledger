@@ -1,5 +1,7 @@
 package com.ledger.app.ui.modelsetup
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +20,11 @@ import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Login
+import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -32,10 +37,15 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -44,6 +54,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ledger.app.data.Model
 import com.ledger.app.data.ModelDownloadStatus
 import com.ledger.app.data.ModelDownloadStatusType
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +64,22 @@ fun ModelSetupScreen(
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val tintColor = MaterialTheme.colorScheme.primary
+  val snackbarHostState = remember { SnackbarHostState() }
+  val scope = rememberCoroutineScope()
 
-  Scaffold { innerPadding ->
+  val authResultLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.StartActivityForResult(),
+  ) { result ->
+    viewModel.handleAuthResult(result) { success, error ->
+      if (!success) {
+        scope.launch {
+          snackbarHostState.showSnackbar(error ?: "HuggingFace login failed")
+        }
+      }
+    }
+  }
+
+  Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { innerPadding ->
     Column(
       modifier = Modifier
         .fillMaxSize()
@@ -89,6 +114,20 @@ fun ModelSetupScreen(
       )
 
       Spacer(modifier = Modifier.height(32.dp))
+
+      HuggingFaceLoginCard(
+        loggedIn = uiState.hfLoggedIn,
+        tokenExpired = uiState.hfTokenExpired,
+        onLogin = {
+          val intent = viewModel.authService.getAuthorizationRequestIntent(
+            viewModel.getAuthorizationRequest()
+          )
+          authResultLauncher.launch(intent)
+        },
+        onLogout = { viewModel.logout() },
+      )
+
+      Spacer(modifier = Modifier.height(24.dp))
 
       Text(
         text = "Select a model to get started",
@@ -132,6 +171,97 @@ fun ModelSetupScreen(
               )
             }
           }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun HuggingFaceLoginCard(
+  loggedIn: Boolean,
+  tokenExpired: Boolean,
+  onLogin: () -> Unit,
+  onLogout: () -> Unit,
+) {
+  val tintColor = MaterialTheme.colorScheme.primary
+
+  Card(
+    modifier = Modifier.fillMaxWidth(),
+    colors = CardDefaults.cardColors(
+      containerColor = if (loggedIn)
+        MaterialTheme.colorScheme.primaryContainer
+      else
+        MaterialTheme.colorScheme.surfaceVariant,
+    ),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      if (loggedIn) {
+        Icon(
+          imageVector = Icons.Rounded.CheckCircle,
+          contentDescription = null,
+          tint = tintColor,
+          modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = "HuggingFace account linked",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+          )
+          Text(
+            text = "Gated models can be downloaded",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+          )
+        }
+        TextButton(onClick = onLogout) {
+          Icon(
+            imageVector = Icons.Rounded.Logout,
+            contentDescription = "Logout",
+            modifier = Modifier.size(16.dp),
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("Logout")
+        }
+      } else {
+        if (tokenExpired) {
+          Icon(
+            imageVector = Icons.Rounded.Warning,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(20.dp),
+          )
+          Spacer(modifier = Modifier.width(10.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = if (tokenExpired) "Session expired" else "Optional: HuggingFace login",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = if (tokenExpired)
+              "Re-login to continue downloading gated models"
+            else
+              "Required only for gated (private) models",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        TextButton(onClick = onLogin) {
+          Icon(
+            imageVector = Icons.Rounded.Login,
+            contentDescription = "Login",
+            modifier = Modifier.size(16.dp),
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Text(if (tokenExpired) "Re-login" else "Login")
         }
       }
     }

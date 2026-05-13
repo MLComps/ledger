@@ -2,13 +2,16 @@ package com.ledger.app.ui.modelsetup
 
 import android.content.Context
 import android.util.Log
+import androidx.activity.result.ActivityResult
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ledger.app.data.DataStoreRepository
 import com.ledger.app.data.DownloadRepository
 import com.ledger.app.data.Model
 import com.ledger.app.data.ModelAllowlist
 import com.ledger.app.data.ModelDownloadStatus
 import com.ledger.app.data.ModelDownloadStatusType
+import com.ledger.app.data.ProjectConfig
 import com.ledger.app.data.TMP_FILE_EXT
 import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,15 +23,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import net.openid.appauth.AuthorizationException
+import net.openid.appauth.AuthorizationRequest
+import net.openid.appauth.AuthorizationResponse
+import net.openid.appauth.AuthorizationService
+import net.openid.appauth.ResponseTypeValues
 
 private const val TAG = "ModelSetupViewModel"
 private const val MODEL_ALLOWLIST_FILENAME = "model_allowlist.json"
+private const val TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000L
 
 data class ModelSetupUiState(
   val models: List<Model> = listOf(),
   val downloadStatus: Map<String, ModelDownloadStatus> = mapOf(),
   val loading: Boolean = true,
   val error: String = "",
+  val hfLoggedIn: Boolean = false,
+  val hfTokenExpired: Boolean = false,
 )
 
 @HiltViewModel
@@ -37,6 +48,7 @@ class ModelSetupViewModel
 constructor(
   @ApplicationContext private val context: Context,
   private val downloadRepository: DownloadRepository,
+  private val dataStoreRepository: DataStoreRepository,
 ) : ViewModel() {
 
   private val _uiState = MutableStateFlow(ModelSetupUiState())
@@ -44,8 +56,82 @@ constructor(
 
   private val externalFilesDir = context.getExternalFilesDir(null)
 
+  val authService = AuthorizationService(context)
+  var curAccessToken: String? = null
+    private set
+
   init {
     loadModels()
+    restoreToken()
+  }
+
+  private fun restoreToken() {
+    viewModelScope.launch(Dispatchers.IO) {
+      val stored = dataStoreRepository.readHfAccessToken() ?: return@launch
+      val (token, expiresAt) = stored
+      val expired = System.currentTimeMillis() >= expiresAt - TOKEN_EXPIRY_BUFFER_MS
+      if (!expired) {
+        curAccessToken = token
+        _uiState.update { it.copy(hfLoggedIn = true, hfTokenExpired = false) }
+      } else {
+        _uiState.update { it.copy(hfLoggedIn = false, hfTokenExpired = true) }
+      }
+    }
+  }
+
+  fun getAuthorizationRequest(): AuthorizationRequest =
+    AuthorizationRequest.Builder(
+      ProjectConfig.authServiceConfig,
+      ProjectConfig.clientId,
+      ResponseTypeValues.CODE,
+      android.net.Uri.parse(ProjectConfig.redirectUri),
+    )
+      .setScope("read-repos")
+      .build()
+
+  fun handleAuthResult(
+    result: ActivityResult,
+    onDone: (success: Boolean, errorMessage: String?) -> Unit,
+  ) {
+    val dataIntent = result.data
+    if (dataIntent == null) {
+      onDone(false, "Empty auth result")
+      return
+    }
+
+    val response = AuthorizationResponse.fromIntent(dataIntent)
+    val exception = AuthorizationException.fromIntent(dataIntent)
+
+    when {
+      response?.authorizationCode != null -> {
+        authService.performTokenRequest(response.createTokenExchangeRequest()) { tokenResponse, tokenEx ->
+          when {
+            tokenResponse?.accessToken != null && tokenResponse.accessTokenExpirationTime != null -> {
+              val token = tokenResponse.accessToken!!
+              val expiresAt = tokenResponse.accessTokenExpirationTime!!
+              viewModelScope.launch(Dispatchers.IO) {
+                dataStoreRepository.saveHfAccessToken(token, expiresAt)
+              }
+              curAccessToken = token
+              _uiState.update { it.copy(hfLoggedIn = true, hfTokenExpired = false) }
+              onDone(true, null)
+            }
+            tokenEx != null -> onDone(false, "Token exchange failed: ${tokenEx.message}")
+            else -> onDone(false, "Token exchange failed")
+          }
+        }
+      }
+      exception != null -> onDone(false, exception.message)
+      else -> onDone(false, null)
+    }
+  }
+
+  fun logout() {
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.clearHfAccessToken()
+    }
+    curAccessToken = null
+    _uiState.update { it.copy(hfLoggedIn = false, hfTokenExpired = false) }
   }
 
   fun loadModels() {
@@ -79,6 +165,7 @@ constructor(
     )
     downloadRepository.downloadModel(
       model = model,
+      accessToken = curAccessToken,
       onStatusUpdated = { m, s -> setDownloadStatus(m, s) },
     )
   }
@@ -110,6 +197,11 @@ constructor(
       .joinToString(File.separator)
     return model.downloadFileName.isNotEmpty() &&
       File(externalFilesDir, modelRelativePath).exists()
+  }
+
+  override fun onCleared() {
+    super.onCleared()
+    authService.dispose()
   }
 
   private fun setDownloadStatus(model: Model, status: ModelDownloadStatus) {

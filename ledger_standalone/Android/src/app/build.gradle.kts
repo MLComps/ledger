@@ -28,6 +28,7 @@ android {
 
     manifestPlaceholders["applicationName"] = "com.ledger.app.LedgerApplication"
     manifestPlaceholders["appIcon"] = "@mipmap/ic_launcher"
+    manifestPlaceholders["appAuthRedirectScheme"] = "com.ledger.app"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -92,6 +93,7 @@ dependencies {
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.datastore.preferences)
+  implementation(libs.openid.appauth)
   kapt(libs.hilt.android.compiler)
   ksp(libs.androidx.room.compiler)
   testImplementation(libs.junit)

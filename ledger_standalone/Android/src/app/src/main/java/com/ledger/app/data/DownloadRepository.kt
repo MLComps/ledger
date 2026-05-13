@@ -29,6 +29,7 @@ private const val MODEL_NAME_TAG = "modelName"
 interface DownloadRepository {
   fun downloadModel(
     model: Model,
+    accessToken: String? = null,
     onStatusUpdated: (model: Model, status: ModelDownloadStatus) -> Unit,
   )
 
@@ -52,6 +53,7 @@ class DefaultDownloadRepository(
 
   override fun downloadModel(
     model: Model,
+    accessToken: String?,
     onStatusUpdated: (model: Model, status: ModelDownloadStatus) -> Unit,
   ) {
     val builder = Data.Builder()
@@ -75,8 +77,9 @@ class DefaultDownloadRepository(
           model.extraDataFiles.joinToString(",") { it.downloadFileName },
         )
     }
-    if (model.accessToken != null) {
-      inputDataBuilder.putString(KEY_MODEL_DOWNLOAD_ACCESS_TOKEN, model.accessToken)
+    val token = accessToken ?: model.accessToken
+    if (token != null) {
+      inputDataBuilder.putString(KEY_MODEL_DOWNLOAD_ACCESS_TOKEN, token)
     }
     val inputData = inputDataBuilder.build()
 
