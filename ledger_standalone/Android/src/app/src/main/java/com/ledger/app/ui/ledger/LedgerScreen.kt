@@ -45,6 +45,7 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.GridOn
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Image
@@ -453,6 +454,20 @@ private fun LedgerMainUi(
       LedgerDashboard(
         uiState = uiState,
         onExportPdf = { exportAndShare() },
+        onExportCsv = {
+          viewModel.exportCsv(
+            context = context,
+            onDone = { uri ->
+              val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+              }
+              shareLauncher.launch(Intent.createChooser(intent, context.getString(R.string.share_report)))
+            },
+            onError = onError,
+          )
+        },
         onSpeakToggle = { speakOrStop() },
         onDeleteTransaction = { ts -> viewModel.deleteTransaction(ts, ledgerTools) },
         onCurrencyChange = { code ->
@@ -757,6 +772,7 @@ private val SUPPORTED_CURRENCIES = listOf(
 private fun LedgerDashboard(
   uiState: LedgerUiState,
   onExportPdf: () -> Unit,
+  onExportCsv: () -> Unit,
   onSpeakToggle: () -> Unit,
   onDeleteTransaction: (Long) -> Unit,
   onCurrencyChange: (String) -> Unit,
@@ -870,6 +886,20 @@ private fun LedgerDashboard(
             modifier = Modifier.size(18.dp),
             tint = if (uiState.isSpeaking) MaterialTheme.colorScheme.tertiary
             else MaterialTheme.colorScheme.secondary,
+          )
+        }
+        IconButton(
+          onClick = onExportCsv,
+          modifier = Modifier.size(36.dp),
+          colors = IconButtonDefaults.iconButtonColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+          ),
+        ) {
+          Icon(
+            Icons.Rounded.GridOn,
+            contentDescription = "Export CSV",
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
           )
         }
         IconButton(

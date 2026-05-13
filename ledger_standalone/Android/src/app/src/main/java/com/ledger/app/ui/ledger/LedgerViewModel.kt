@@ -153,6 +153,19 @@ constructor(
     }
   }
 
+  fun exportCsv(context: Context, onDone: (Uri) -> Unit, onError: (String) -> Unit) {
+    val snapshot = _uiState.value
+    viewModelScope.launch(Dispatchers.IO) {
+      try {
+        val uri = LedgerCsvExporter.export(context, snapshot)
+        withContext(Dispatchers.Main) { onDone(uri) }
+      } catch (e: Exception) {
+        Log.e(TAG, "CSV export failed", e)
+        withContext(Dispatchers.Main) { onError(e.message ?: context.getString(R.string.pdf_export_failed)) }
+      }
+    }
+  }
+
   fun initModel(
     context: Context,
     model: Model,
