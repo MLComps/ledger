@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name" translatable="false">Ledger</string>
+  <string name="error" translatable="false">Error</string>
+  <string name="reset" translatable="false">Reset</string>
+  <string name="cancel" translatable="false">Cancel</string>
+  <string name="resetting_engine" translatable="false">Resetting engine...</string>
+  <string name="unknown_error" translatable="false">Unknown error</string>
+  <string name="engin_reset_message" translatable="false">Engine was reset</string>
+  <string name="chat_agent_agent_name" translatable="false">Agent</string>
+  <string name="notification_title_success" translatable="false">Model download succeeded</string>
+  <string name="notification_title_fail" translatable="false">Model download failed</string>
+  <string name="notification_content_success" translatable="false">Model "%s" has been downloaded</string>
+  <string name="notification_content_fail" translatable="false">Failed to download model "%s"</string>
+  <string name="hold_down_to_talk" translatable="false">Hold to talk</string>
+  <string name="listening" translatable="false">Listening...</string>
+  <string name="release_to_send" translatable="false">Release to send</string>
+  <string name="slide_up_to_cancel" translatable="false">Slide up to cancel</string>
+  <string name="export_pdf" translatable="false">Export PDF Report</string>
+  <string name="share_report" translatable="false">Share Report</string>
+  <string name="recent_transactions" translatable="false">Recent Transactions</string>
+  <string name="inventory" translatable="false">Inventory</string>
+  <string name="low_stock" translatable="false">LOW</string>
+  <string name="pdf_export_failed" translatable="false">Failed to export report</string>
+  <string name="speak_summary" translatable="false">Speak summary</string>
+  <string name="stop_speaking" translatable="false">Stop speaking</string>
+  <string name="daily_digest_channel" translatable="false">Daily Ledger Digest</string>
+</resources>
