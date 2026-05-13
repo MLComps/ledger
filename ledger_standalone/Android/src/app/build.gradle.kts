@@ -61,7 +61,6 @@ android {
   }
   kotlinOptions {
     jvmTarget = "11"
-    freeCompilerArgs += "-Xcontext-receivers"
   }
   buildFeatures {
     compose = true
@@ -92,13 +91,11 @@ dependencies {
   implementation(libs.hilt.android)
   implementation(libs.hilt.navigation.compose)
   implementation(libs.androidx.exifinterface)
-  implementation(libs.moshi.kotlin)
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.datastore.preferences)
   kapt(libs.hilt.android.compiler)
   ksp(libs.androidx.room.compiler)
-  ksp(libs.moshi.kotlin.codegen)
   testImplementation(libs.junit)
   androidTestImplementation(libs.androidx.junit)
   androidTestImplementation(libs.androidx.espresso.core)
