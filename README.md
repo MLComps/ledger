@@ -10,16 +10,20 @@ Built for the [Gemma 4 Good Hackathon](https://www.kaggle.com/competitions/gemma
 
 ## Features
 
-- **Natural language entry** — type, speak, forward an SMS, or photograph a receipt
+- **Natural language entry** — type, speak, forward an SMS, or photograph a receipt; audio clips and WAV files also supported
 - **On-device inference** — Gemma 4 via LiteRT-LM; no internet required after model download
-- **Live dashboard** — expandable transaction history and inventory view with low-stock alerts
+- **Multi-tab UI** — Home (chat + balance), History, Inventory, Settings; smooth fade/slide transitions
+- **Hero balance card** — animated revenue, cost, and net profit with a gradient card; privacy mode masks all amounts app-wide
+- **Transaction history** — date-grouped list with swipe-to-delete and confidence indicators
+- **Inventory tracking** — per-item stock levels with low-stock badges and alerts
+- **Confidence-based validation** — configurable confirmation dialog for low-confidence or all extractions before writing to the database
+- **SMS monitoring** — opt-in background listener auto-extracts transactions from incoming messages
 - **CSV & PDF export** — shareable A4 PDF report and a structured CSV (transactions, summary, inventory)
-- **Currency selection** — choose from 11 currencies (KES, NGN, GHS, UGX, TZS, ETB, ZAR, RWF, USD, EUR, GBP); persisted across sessions and applied to dashboard, TTS, and exports
-- **Onboarding walkthrough** — 4-page first-launch guide covering voice entry, SMS monitoring, and image input
-- **TTS coaching** — spoken daily summary of revenue, expenses and profit
+- **Currency selection** — 11 currencies (KES, NGN, GHS, UGX, TZS, ETB, ZAR, RWF, USD, EUR, GBP); persisted and applied everywhere
+- **TTS coaching** — spoken summary of revenue, expenses, and profit
 - **Daily digest** — WorkManager notification at 18:00 with the day's totals
-- **Transaction correction** — delete individual entries directly from the dashboard
-- **Persistent storage** — Room database; survives app restarts
+- **Persistent storage** — Room database with migrations; survives app restarts
+- **Onboarding walkthrough** — 4-page first-launch guide covering voice entry, SMS monitoring, and image input
 
 ---
 
@@ -95,9 +99,15 @@ ledger_standalone/Android/src/
 │   │   ├── llm/           # LiteRT-LM chat helper
 │   │   ├── runtime/       # Model lifecycle (load/unload)
 │   │   ├── ui/
-│   │   │   ├── ledger/    # Main chat + dashboard screen, tools, PDF export
-│   │   │   ├── modelsetup/# Model download screen
-│   │   │   └── common/    # Voice input, audio animation
+│   │   │   ├── nav/       # Bottom nav scaffold, type-safe routes
+│   │   │   ├── ledger/    # Home tab — chat, hero card, tools, exports
+│   │   │   ├── history/   # History tab — date-grouped transaction list
+│   │   │   ├── inventory/ # Inventory tab — stock levels and alerts
+│   │   │   ├── settings/  # Settings tab — privacy, currency, validation, HF login
+│   │   │   ├── modelsetup/# Model download and HuggingFace auth screen
+│   │   │   ├── onboarding/# First-launch walkthrough
+│   │   │   ├── theme/     # Material 3 theme, typography, privacy CompositionLocal
+│   │   │   └── common/    # Voice input, audio recorder, chat message types
 │   │   └── worker/        # DownloadWorker, DailyDigestWorker
 │   └── res/
 ├── local.properties.example
@@ -144,9 +154,26 @@ Real devices are strongly recommended for extended use.
 
 ## Roadmap
 
+**Shipped**
+- [x] Natural language transaction entry (text, voice, SMS, image, audio)
+- [x] On-device Gemma 4 inference via LiteRT-LM
+- [x] Room database with full transaction and stock history
+- [x] CSV and PDF export
+- [x] TTS daily summary and WorkManager digest notification
+- [x] Confidence-based validation before writing to the database
+- [x] Multi-tab UI with History, Inventory, and Settings screens
+- [x] Privacy mode — hide all amounts app-wide
+- [x] HuggingFace OAuth2 PKCE login for gated model access
+
+**Next**
+- [ ] Prompt accuracy hardening — edge case testing, currency inference, multi-item extractions
+- [ ] Multi-turn clarification — ask a follow-up when a transaction is ambiguous rather than guessing
+- [ ] Smarter context window — summarise older turns to stay within the 32K token limit
+
+**Later**
 - [ ] Multi-account / multi-business support
-- [ ] Background sync to Google Drive
-- [ ] Recurring transaction detection and reminders
-- [ ] Unit and instrument tests for core logic
+- [ ] Recurring transaction detection
+- [ ] Background sync to Google Drive or local backup
+- [ ] Unit and integration tests for core logic
 
 ---
