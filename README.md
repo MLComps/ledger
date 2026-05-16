@@ -36,7 +36,7 @@ Both models are Gemma 4 — multimodal (text + image + audio), 32K context, thin
 | Gemma 4 E2B | ~2.4 GB | Mid-range devices, faster inference |
 | Gemma 4 E4B | ~3.7 GB | Higher-end devices, better accuracy |
 
-Models are downloaded from HuggingFace on first use. Gemma 4 is gated — a HuggingFace account and acceptance of the model licence are required before downloading.
+Models are downloaded from HuggingFace on first use via the `litert-community` organisation. No account or token required — the files are publicly hosted.
 
 ---
 
@@ -76,13 +76,13 @@ Pre-built APKs are published under [Releases](https://github.com/MLComps/ledger/
 
 | APK | Target |
 |---|---|
-| `ledger-arm64-v8a-release.apk` | Physical Android devices (most phones) |
-| `ledger-x86_64-release.apk` | Android emulator (x86_64 AVD) |
+| `ledger-v1.1.0-arm64-v8a.apk` | Physical Android devices (most phones) |
+| `ledger-v1.1.0-x86_64.apk` | Android emulator (x86_64 AVD) |
 
 Install via ADB:
 ```bash
-adb install ledger-arm64-v8a-release.apk   # real device
-adb install ledger-x86_64-release.apk       # emulator
+adb install ledger-v1.1.0-arm64-v8a.apk   # real device
+adb install ledger-v1.1.0-x86_64.apk       # emulator
 ```
 
 ---
@@ -93,6 +93,7 @@ adb install ledger-x86_64-release.apk       # emulator
 ledger_standalone/Android/src/
 ├── app/src/main/
 │   ├── java/com/ledger/app/
+│   │   ├── common/        # HapticManager and other app-wide utilities
 │   │   ├── data/          # Model metadata, download, DataStore
 │   │   ├── db/            # Room database, DAOs, repository
 │   │   ├── di/            # Hilt modules
@@ -104,10 +105,10 @@ ledger_standalone/Android/src/
 │   │   │   ├── history/   # History tab — date-grouped transaction list
 │   │   │   ├── inventory/ # Inventory tab — stock levels and alerts
 │   │   │   ├── settings/  # Settings tab — privacy, currency, validation, HF login
-│   │   │   ├── modelsetup/# Model download and HuggingFace auth screen
+│   │   │   ├── modelsetup/# Model download screen
 │   │   │   ├── onboarding/# First-launch walkthrough
 │   │   │   ├── theme/     # Material 3 theme, typography, privacy CompositionLocal
-│   │   │   └── common/    # Voice input, audio recorder, chat message types
+│   │   │   └── common/    # Shared composables: splash, background, chat types, voice input
 │   │   └── worker/        # DownloadWorker, DailyDigestWorker
 │   └── res/
 ├── local.properties.example
@@ -125,7 +126,7 @@ Two ABI-split release APKs are produced by `./gradlew assembleRelease`:
 | `app-arm64-v8a-release.apk` | arm64-v8a | Physical devices |
 | `app-x86_64-release.apk` | x86_64 | Emulator |
 
-Release builds have R8 minification and resource shrinking enabled. Debug builds (`./gradlew assembleDebug`) produce a universal APK with the `.debug` application ID suffix so both can be installed side-by-side.
+Release builds have R8 minification and resource shrinking enabled. Debug builds (`./gradlew assembleDebug`) are also ABI-split and share the same application ID (`com.ledger.app`) — installing a debug build replaces the release build and vice versa.
 
 To build:
 ```bash
@@ -163,7 +164,7 @@ Real devices are strongly recommended for extended use.
 - [x] Confidence-based validation before writing to the database
 - [x] Multi-tab UI with History, Inventory, and Settings screens
 - [x] Privacy mode — hide all amounts app-wide
-- [x] HuggingFace OAuth2 PKCE login for gated model access
+- [x] HuggingFace OAuth2 PKCE login (wired in Settings; not required for current public models)
 
 **Next**
 - [ ] Prompt accuracy hardening — edge case testing, currency inference, multi-item extractions
