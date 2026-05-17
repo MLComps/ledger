@@ -132,9 +132,11 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ledger.app.BuildConfig
 import com.ledger.app.R
 import com.ledger.app.data.Model
 import com.ledger.app.ui.common.chat.AudioRecorderPanel
+import com.ledger.app.ui.common.chat.ChatMessageClarification
 import com.ledger.app.ui.common.chat.ChatMessageText
 import com.ledger.app.ui.common.chat.ChatMessageWarning
 import com.ledger.app.ui.common.chat.ChatSide
@@ -156,7 +158,7 @@ For every input — whether typed text, spoken audio, or image — extract any f
 
 JSON schema:
 {
-  "action": "add_transaction" | "update_stock" | "get_health" | "unknown",
+  "action": "add_transaction" | "update_stock" | "get_health" | "clarify" | "unknown",
   "transactions": [
     {
       "transaction_type": "sale" | "purchase" | "expense" | "income",
@@ -172,7 +174,8 @@ JSON schema:
   "stock_updates": [
     { "item": "<name>", "quantity_delta": <number>, "unit": "<unit>" }
   ],
-  "message": "<one sentence in the user's language confirming what was recorded>"
+  "question": "<one short question in the user's language — only present when action=clarify>",
+  "message": "<one sentence in the user's language confirming what was recorded — only present when action is not clarify>"
 }
 
 Rules:
@@ -180,6 +183,8 @@ Rules:
 - action="update_stock" for restocking or stock level changes
 - action="get_health" when asked for totals, summary, or financial health
 - action="unknown" if no financial action is found
+- action="clarify" ONLY when the amount is completely absent AND cannot be inferred from context, OR when the direction (receiving vs paying money) is genuinely ambiguous with no context clues; do NOT clarify for unclear item names — use confidence="low" instead; do NOT clarify for stock-only updates
+- When action="clarify": transactions and stock_updates must be empty arrays; include a "question" field with one short question; omit the "message" field
 - transactions and stock_updates may be empty arrays []
 - currency defaults to $currency if not mentioned
 - cost defaults to 0 if not mentioned
@@ -303,37 +308,40 @@ private fun LedgerMainUi(
   var curAmplitude by remember { mutableIntStateOf(0) }
   var pendingTransactions by remember { mutableStateOf<List<PendingTransaction>>(emptyList()) }
   var showRitualSummary by remember { mutableStateOf(false) }
+  var showDebugOverlay by remember { mutableStateOf(false) }
+  var debugTapCount by remember { mutableIntStateOf(0) }
 
   fun handleResponse(response: String) {
-    val parsed = parseResponse(response, ledgerTools, uiState.selectedCurrency)
-    
-    // Extract human-friendly message from JSON
-    val displayMessage = try {
-      val start = response.indexOf('{')
-      val end = response.lastIndexOf('}')
-      if (start != -1 && end != -1) {
-        val json = JSONObject(response.substring(start, end + 1))
-        json.optString("message", "Transaction recorded.")
-      } else response
-    } catch (e: Exception) { "Transaction recorded." }
-
-    val mode = uiState.validationMode
-    val needsConfirm = parsed.filter { tx ->
-      when (mode) {
-        "all" -> true
-        "critical" -> tx.confidence == "low"
-        else -> false
+    viewModel.setLastRawJson(response)
+    when (val result = parseResponse(response, ledgerTools, uiState.selectedCurrency)) {
+      is ParseResult.ClarificationNeeded -> {
+        viewModel.setClarificationPending(true)
+        viewModel.addMessage(ChatMessageClarification(result.question))
+      }
+      is ParseResult.Transactions -> {
+        viewModel.setClarificationPending(false)
+        val mode = uiState.validationMode
+        val needsConfirm = result.list.filter { tx ->
+          when (mode) {
+            "all" -> true
+            "critical" -> tx.confidence == "low"
+            else -> false
+          }
+        }
+        val autoApply = result.list - needsConfirm.toSet()
+        autoApply.forEach {
+          commitTransaction(it, ledgerTools)
+          if (it.transactionType == "sale" || it.transactionType == "income") hapticManager.playSaleClink()
+          else hapticManager.playExpenseThud()
+        }
+        if (needsConfirm.isNotEmpty()) pendingTransactions = needsConfirm
+        viewModel.addMessage(ChatMessageText(content = result.message, side = ChatSide.AGENT))
+      }
+      is ParseResult.Empty -> {
+        viewModel.setClarificationPending(false)
+        viewModel.addMessage(ChatMessageText(content = "I couldn't understand that. Could you rephrase?", side = ChatSide.AGENT))
       }
     }
-    val autoApply = parsed - needsConfirm.toSet()
-    autoApply.forEach { 
-      commitTransaction(it, ledgerTools)
-      if (it.transactionType == "sale" || it.transactionType == "income") hapticManager.playSaleClink()
-      else hapticManager.playExpenseThud()
-    }
-    if (needsConfirm.isNotEmpty()) pendingTransactions = needsConfirm
-    
-    viewModel.addMessage(ChatMessageText(content = displayMessage, side = ChatSide.AGENT))
   }
 
   if (pendingTransactions.isNotEmpty()) {
@@ -413,6 +421,8 @@ private fun LedgerMainUi(
   fun processText(text: String) {
     if (text.trim().isEmpty()) return
     inputText = ""
+    // Sending any message resolves a pending clarification
+    if (uiState.clarificationPending) viewModel.setClarificationPending(false)
     viewModel.sendMessage(model, text, onDone = { handleResponse(it) }, onError = onError)
   }
 
@@ -428,7 +438,13 @@ private fun LedgerMainUi(
       )
     ) {
       // ── Hero balance card ─────────────────────────────────────────────────
-      Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+      Box(modifier = Modifier
+        .padding(horizontal = 12.dp, vertical = 8.dp)
+        .clickable {
+          debugTapCount++
+          if (debugTapCount >= 3) { debugTapCount = 0; showDebugOverlay = true }
+        }
+      ) {
         HeroBalanceCard(
           uiState = uiState,
           privacyModeEnabled = privacyMode.value,
@@ -493,6 +509,26 @@ private fun LedgerMainUi(
         )
       }
 
+      if (showDebugOverlay && BuildConfig.DEBUG) {
+        AlertDialog(
+          onDismissRequest = { showDebugOverlay = false },
+          title = { Text("Debug — Last inference", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) },
+          text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              Text("Raw JSON response:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Text(
+                  uiState.lastRawJson.ifBlank { "No inference yet." },
+                  style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                  modifier = Modifier.padding(10.dp),
+                )
+              }
+            }
+          },
+          confirmButton = { TextButton(onClick = { showDebugOverlay = false }) { Text("Close") } },
+        )
+      }
+
       // ── Control chips ─────────────────────────────────────────────────────
       Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 4.dp),
@@ -531,6 +567,10 @@ private fun LedgerMainUi(
             is ChatMessageText -> ChatBubble(message = message, onDelete = {
               viewModel.addMessage(ChatMessageWarning("Message removed"))
             })
+            is ChatMessageClarification -> ClarificationBubble(
+              message = message,
+              onSkip = { viewModel.setClarificationPending(false) },
+            )
             is ChatMessageWarning -> Box(
               modifier = Modifier.fillMaxWidth(),
               contentAlignment = Alignment.Center,
@@ -836,6 +876,51 @@ private fun HeroBalanceCard(
 // ── Chat composables ──────────────────────────────────────────────────────────
 
 @Composable
+private fun ClarificationBubble(message: ChatMessageClarification, onSkip: () -> Unit) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+    horizontalArrangement = Arrangement.Start,
+  ) {
+    ElevatedCard(
+      modifier = Modifier.widthIn(max = 300.dp),
+      colors = CardDefaults.elevatedCardColors(
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+      ),
+      shape = RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp),
+    ) {
+      Column(modifier = Modifier.padding(12.dp, 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          Icon(
+            Icons.Rounded.Warning,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+          )
+          Text(
+            "Need a detail",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+          )
+        }
+        Text(
+          message.question,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        TextButton(
+          onClick = onSkip,
+          modifier = Modifier.align(Alignment.End).height(28.dp),
+          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        ) {
+          Text("Skip", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f))
+        }
+      }
+    }
+  }
+}
+
+@Composable
 private fun ChatBubble(message: ChatMessageText, onDelete: () -> Unit) {
   val isUser = message.side == ChatSide.USER
   var showMenu by remember { mutableStateOf(false) }
@@ -1031,12 +1116,24 @@ private fun ConfirmTransactionsDialog(
 
 // ── JSON parsing ──────────────────────────────────────────────────────────────
 
-private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: String): List<PendingTransaction> {
+sealed class ParseResult {
+  data class Transactions(val list: List<PendingTransaction>, val message: String) : ParseResult()
+  data class ClarificationNeeded(val question: String) : ParseResult()
+  object Empty : ParseResult()
+}
+
+private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: String): ParseResult {
   return try {
     val start = jsonStr.indexOf('{'); val end = jsonStr.lastIndexOf('}')
-    if (start == -1 || end == -1 || end <= start) return emptyList()
+    if (start == -1 || end == -1 || end <= start) return ParseResult.Empty
     val json = JSONObject(jsonStr.substring(start, end + 1))
     val action = json.optString("action", "unknown")
+
+    if (action == "clarify") {
+      val question = json.optString("question", "").ifBlank { "Could you provide more details?" }
+      return ParseResult.ClarificationNeeded(question)
+    }
+
     val stockUpdates = json.optJSONArray("stock_updates")
     if (stockUpdates != null) {
       for (i in 0 until stockUpdates.length()) {
@@ -1044,8 +1141,9 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
         tools.updateStock(upd.optString("item", "item"), upd.optDouble("quantity_delta", 0.0), upd.optString("unit", "unit"))
       }
     }
+    val message = json.optString("message", "Done.")
     val transactions = json.optJSONArray("transactions")
-    if (action == "add_transaction" && transactions != null)
+    val list = if (action == "add_transaction" && transactions != null)
       (0 until transactions.length()).map { i ->
         val tx = transactions.getJSONObject(i)
         PendingTransaction(
@@ -1060,9 +1158,10 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
         )
       }
     else emptyList()
+    ParseResult.Transactions(list, message)
   } catch (e: Exception) {
     Log.w(TAG, "JSON parse failed: ${e.message}")
-    emptyList()
+    ParseResult.Empty
   }
 }
 

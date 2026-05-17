@@ -87,6 +87,8 @@ data class LedgerUiState(
   val isSpeaking: Boolean = false,
   val selectedCurrency: String = "KES",
   val validationMode: String = "critical",
+  val clarificationPending: Boolean = false,
+  val lastRawJson: String = "",
 )
 
 @HiltViewModel
@@ -128,8 +130,11 @@ constructor(
       synchronized(tools.entries) {
         val entries = tools.entries.toList()
         val rev = entries.filter { it.transactionType == "sale" || it.transactionType == "income" }.sumOf { it.amount }
-        val cogs = entries.sumOf { it.cost }
+        // COGS only applies to sale/income entries; purchase amounts are tracked separately to avoid double-counting
+        val cogs = entries.filter { it.transactionType == "sale" || it.transactionType == "income" }.sumOf { it.cost }
         val pur = entries.filter { it.transactionType == "purchase" || it.transactionType == "expense" }.sumOf { it.amount }
+        check(rev >= 0) { "Revenue cannot be negative: $rev" }
+        check(pur >= 0) { "Purchase total cannot be negative: $pur" }
         val stockSnapshot = synchronized(tools.stock) { tools.stock.toMap() }
         val recent = entries.takeLast(30).reversed()
         val lowStock = stockSnapshot.entries
@@ -560,6 +565,14 @@ constructor(
 
   fun setProcessing(processing: Boolean) {
     _uiState.update { it.copy(processing = processing) }
+  }
+
+  fun setClarificationPending(pending: Boolean) {
+    _uiState.update { it.copy(clarificationPending = pending) }
+  }
+
+  fun setLastRawJson(json: String) {
+    _uiState.update { it.copy(lastRawJson = json) }
   }
 
   fun setResettingEngine(resetting: Boolean) {

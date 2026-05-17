@@ -1,0 +1,399 @@
+{
+  "description": "Ledger prompt eval corpus — 30+ labelled input/expected pairs for system prompt accuracy testing.",
+  "default_currency": "KES",
+  "cases": [
+
+    // ── Sales (explicit) ─────────────────────────────────────────────────────
+    {
+      "id": "S01",
+      "input": "Sold 2 kg of tomatoes for 80 shillings",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "tomatoes",
+        "amount": 80,
+        "currency": "KES",
+        "quantity": 2,
+        "unit": "kg",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "S02",
+      "input": "Customer bought a loaf of bread, 50 bob",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "bread",
+        "amount": 50,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "pieces",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "S03",
+      "input": "uza sukari kilo moja mia moja",
+      "note": "Swahili: sold 1 kg sugar for 100",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "sukari",
+        "amount": 100,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "kg",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "S04",
+      "input": "3 packets of uji at 30 each",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "uji",
+        "amount": 90,
+        "currency": "KES",
+        "quantity": 3,
+        "unit": "packets",
+        "confidence": "medium"
+      }
+    },
+    {
+      "id": "S05",
+      "input": "I sold airtime worth 500",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "airtime",
+        "amount": 500,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "unit",
+        "confidence": "high"
+      }
+    },
+
+    // ── Expenses / Purchases ──────────────────────────────────────────────────
+    {
+      "id": "E01",
+      "input": "Bought 10 kg of rice from supplier for 1200 KES",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "purchase",
+        "item": "rice",
+        "amount": 1200,
+        "currency": "KES",
+        "quantity": 10,
+        "unit": "kg",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "E02",
+      "input": "Paid 500 for electricity",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "expense",
+        "item": "electricity",
+        "amount": 500,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "unit",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "E03",
+      "input": "Transport cost 150 bob today",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "expense",
+        "item": "transport",
+        "amount": 150,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "unit",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "E04",
+      "input": "nilipa rent elfu mbili",
+      "note": "Swahili: I paid rent 2000",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "expense",
+        "item": "rent",
+        "amount": 2000,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "unit",
+        "confidence": "high"
+      }
+    },
+
+    // ── Income (delayed payment) ──────────────────────────────────────────────
+    {
+      "id": "I01",
+      "input": "Customer paid for previous sale, 300 shillings",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "income",
+        "item": "previous sale payment",
+        "amount": 300,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "unit",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "I02",
+      "input": "Received 1500 from John for debt",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "income",
+        "item": "debt repayment",
+        "amount": 1500,
+        "currency": "KES",
+        "quantity": 1,
+        "unit": "unit",
+        "confidence": "high"
+      }
+    },
+
+    // ── Multi-item ────────────────────────────────────────────────────────────
+    {
+      "id": "M01",
+      "input": "Sold onions 60 bob and tomatoes 80 bob",
+      "expected_count": 2,
+      "expected": [
+        {"action": "add_transaction", "transaction_type": "sale", "item": "onions", "amount": 60, "currency": "KES"},
+        {"action": "add_transaction", "transaction_type": "sale", "item": "tomatoes", "amount": 80, "currency": "KES"}
+      ]
+    },
+    {
+      "id": "M02",
+      "input": "Bought 5 kg flour for 400 and 2 litres cooking oil for 320",
+      "expected_count": 2,
+      "expected": [
+        {"action": "add_transaction", "transaction_type": "purchase", "item": "flour", "amount": 400, "currency": "KES", "quantity": 5, "unit": "kg"},
+        {"action": "add_transaction", "transaction_type": "purchase", "item": "cooking oil", "amount": 320, "currency": "KES", "quantity": 2, "unit": "litres"}
+      ]
+    },
+
+    // ── Currency inference ────────────────────────────────────────────────────
+    {
+      "id": "C01",
+      "input": "Sold eggs for 500 naira",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "eggs",
+        "amount": 500,
+        "currency": "NGN",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "C02",
+      "input": "Sold maize for 200",
+      "note": "No currency mentioned — should default to KES",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "maize",
+        "amount": 200,
+        "currency": "KES",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "C03",
+      "input": "Customer paid GHS 80 for charcoal",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "charcoal",
+        "amount": 80,
+        "currency": "GHS",
+        "confidence": "high"
+      }
+    },
+
+    // ── M-Pesa / SMS shorthand ────────────────────────────────────────────────
+    {
+      "id": "P01",
+      "input": "Confirmed. Ksh1,200.00 received from JOHN KAMAU 0712345678 on 12/5/26 at 10:23 AM. New M-PESA balance is Ksh3,450.00",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "income",
+        "item": "M-Pesa payment",
+        "amount": 1200,
+        "currency": "KES",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "P02",
+      "input": "Ksh500 sent to SAFARICOM for Airtime",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "expense",
+        "item": "airtime",
+        "amount": 500,
+        "currency": "KES",
+        "confidence": "high"
+      }
+    },
+
+    // ── Voice fillers / informal ──────────────────────────────────────────────
+    {
+      "id": "V01",
+      "input": "um so I sold like uh five mangoes for two hundred",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "mangoes",
+        "amount": 200,
+        "currency": "KES",
+        "quantity": 5,
+        "unit": "pieces",
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "V02",
+      "input": "yeah that customer bought stuff worth about three fifty",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "goods",
+        "amount": 350,
+        "currency": "KES",
+        "confidence": "medium"
+      }
+    },
+
+    // ── Corrections ───────────────────────────────────────────────────────────
+    {
+      "id": "R01",
+      "input": "actually it was 500 not 5000 for the rice",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "item": "rice",
+        "amount": 500,
+        "currency": "KES",
+        "confidence": "medium"
+      }
+    },
+    {
+      "id": "R02",
+      "input": "cancel that, it was a purchase not a sale",
+      "expected": {
+        "action": "unknown",
+        "note": "correction without amount context — model should clarify or return unknown"
+      }
+    },
+
+    // ── Stock updates ─────────────────────────────────────────────────────────
+    {
+      "id": "T01",
+      "input": "Restocked 20 kg of maize flour",
+      "expected": {
+        "action": "update_stock",
+        "item": "maize flour",
+        "quantity_delta": 20,
+        "unit": "kg"
+      }
+    },
+    {
+      "id": "T02",
+      "input": "Added 50 pieces of soap to inventory",
+      "expected": {
+        "action": "update_stock",
+        "item": "soap",
+        "quantity_delta": 50,
+        "unit": "pieces"
+      }
+    },
+
+    // ── Get health / summary ──────────────────────────────────────────────────
+    {
+      "id": "H01",
+      "input": "What is my profit today?",
+      "expected": {
+        "action": "get_health"
+      }
+    },
+    {
+      "id": "H02",
+      "input": "Give me a summary of today's business",
+      "expected": {
+        "action": "get_health"
+      }
+    },
+
+    // ── Clarification expected ────────────────────────────────────────────────
+    {
+      "id": "Q01",
+      "input": "I sold some tomatoes",
+      "note": "Amount missing — model should clarify",
+      "expected": {
+        "action": "clarify"
+      }
+    },
+    {
+      "id": "Q02",
+      "input": "tomatoes transaction",
+      "note": "No amount, no direction — clarify",
+      "expected": {
+        "action": "clarify"
+      }
+    },
+
+    // ── Unknown / no financial action ─────────────────────────────────────────
+    {
+      "id": "U01",
+      "input": "What time does the market close?",
+      "expected": {
+        "action": "unknown"
+      }
+    },
+    {
+      "id": "U02",
+      "input": "Hello",
+      "expected": {
+        "action": "unknown"
+      }
+    },
+
+    // ── Low confidence (item unclear, amount present) ─────────────────────────
+    {
+      "id": "L01",
+      "input": "Sold that thing for 200",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "sale",
+        "amount": 200,
+        "currency": "KES",
+        "confidence": "low"
+      }
+    },
+    {
+      "id": "L02",
+      "input": "Someone paid me 800 for something",
+      "expected": {
+        "action": "add_transaction",
+        "transaction_type": "income",
+        "amount": 800,
+        "currency": "KES",
+        "confidence": "low"
+      }
+    }
+  ]
+}

@@ -14,6 +14,7 @@ enum class ChatMessageType {
   TEXT,
   AUDIO_CLIP,
   LOADING,
+  CLARIFICATION,
 }
 
 enum class ChatSide {
@@ -62,6 +63,9 @@ open class ChatMessageText(
     accelerator = accelerator,
     hideSenderLabel = hideSenderLabel,
   )
+
+class ChatMessageClarification(val question: String) :
+  ChatMessage(type = ChatMessageType.CLARIFICATION, side = ChatSide.AGENT)
 
 class ChatMessageAudioClip(
   val audioData: ByteArray,

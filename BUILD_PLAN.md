@@ -70,25 +70,27 @@ Goal: replace the utilitarian shell with a polished, production-quality app — 
 
 ---
 
-## Phase 7 — Prompt Accuracy & Multi-turn Verification [ next ]
+## Phase 7 — Prompt Accuracy & Multi-turn Verification [ in progress ]
 
 Goal: close the gap between what the user says and what gets written to the database; use conversation to resolve ambiguity instead of silently guessing.
 
 ### 7a — System prompt hardening
-- [ ] Build a test corpus of ≥ 30 labelled `{input, expected_json}` pairs covering: partial amounts, multi-item receipts, currency ambiguity, SMS M-Pesa shorthand, voice fillers, non-English input, negative corrections ("actually it was 500 not 5000")
-- [ ] Automated eval script (`scripts/eval_prompt.py`) — sends each input to the model, diffs actual vs expected JSON, reports per-field accuracy (item, amount, currency, type, quantity, cost, confidence) and overall record accuracy
-- [ ] Prompt iteration loop: target ≥ 90 % record accuracy before shipping; document which failure modes required rule changes
+- [x] Build a test corpus of 30 labelled `{input, expected_json}` pairs — `scripts/eval_corpus.json`; covers: explicit sales/expenses/income, multi-item, currency inference, M-Pesa SMS, Swahili input, voice fillers, corrections, stock updates, get_health, clarify cases, unknown, low-confidence
+- [x] Automated eval script `scripts/eval_prompt.py` — sends each corpus case to Gemini API, diffs action + key fields against expected, reports per-field accuracy and overall pass rate; target ≥ 90 %
+- [x] System prompt updated — `action="clarify"` added to schema; clear rules for when to clarify vs use `confidence="low"`
+- [ ] Prompt iteration loop — run eval, identify failure modes, iterate until ≥ 90 % record accuracy
 
 ### 7b — Multi-turn clarification flow
-- [ ] Extend JSON schema with `"action": "clarify"` and `"question": "<one sentence>"` — model emits this when a critical field (amount or transaction direction) is truly ambiguous; must NOT clarify when a reasonable `confidence="medium"` guess is possible
-- [ ] In `parseResponse`: if `action == "clarify"`, extract `question`, render as agent bubble with a distinct `⚠` icon, set `clarificationPending = true` — no DB write, no confirmation dialog
-- [ ] While `clarificationPending`, the next user message continues the clarification context; model re-processes with prior partial context prepended
-- [ ] **Skip button** on the clarification bubble — dismisses pending entry without replying; resets `clarificationPending`
-- [ ] System prompt rule additions: clarify when amount is missing entirely or direction is genuinely ambiguous; guess + `confidence="low"` when amount exists but item name is unclear; never clarify for stock-only updates
+- [x] `action="clarify"` + `question` field added to JSON schema and system prompt rules
+- [x] `sealed class ParseResult` — `Transactions`, `ClarificationNeeded`, `Empty`; replaces raw `List<PendingTransaction>` return
+- [x] `handleResponse` branches on `ParseResult` — clarification sets `clarificationPending = true`, no DB write; transactions follow existing validation flow; empty returns friendly fallback message
+- [x] `ChatMessageClarification` type added; `ClarificationBubble` composable with ⚠ header, question text, and Skip button
+- [x] `clarificationPending` in `LedgerUiState`; `setClarificationPending()` on ViewModel
+- [x] Sending any follow-up message clears `clarificationPending`; LiteRT conversation history provides context automatically
 
 ### 7c — Dashboard accuracy audit
-- [ ] Debug overlay (debug builds only) — floating `ElevatedCard` toggled by triple-tap on dashboard; shows raw JSON from last inference, field diff against what was committed, per-field confidence
-- [ ] Audit `LedgerViewModel.syncFromTools` revenue/cost/profit formula against all four transaction types plus mixed-batch inputs; add `check(...)` assertions for impossible states
+- [x] Debug overlay — `AlertDialog` showing raw JSON from last inference, toggled by triple-tap on hero card; debug builds only (`BuildConfig.DEBUG`); `lastRawJson` stored in `LedgerUiState`
+- [x] `syncFromTools` formula fix — COGS (`cost` field) now only summed for sale/income entries, not purchases, preventing double-count; added `check(...)` assertions for negative revenue and purchases
 - [ ] Verify Room migration 1→2 (confidence column) runs cleanly on fresh install, upgrade from v1, and after `clearTransactions()`
 
 ---
