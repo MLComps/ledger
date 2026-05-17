@@ -183,22 +183,30 @@ Rules:
 - action="update_stock" for restocking or stock level changes
 - action="get_health" when asked for totals, summary, or financial health
 - action="unknown" if no financial action is found
-- action="clarify" ONLY when the amount is completely absent AND cannot be inferred from any context; do NOT clarify for unclear item names — use confidence="low" instead; do NOT clarify for stock-only updates; do NOT clarify when the direction is clear from words like "sold", "bought", "paid", "received", "someone paid me", "customer bought"
-- If the amount IS present and the direction IS clear, ALWAYS record the transaction even if the item name is vague (use item="goods") — never clarify in this case
-- Corrections like "actually it was X not Y" always resolve to action="add_transaction" with the corrected amount; never clarify corrections when an amount is stated
-- When action="clarify": transactions and stock_updates must be empty arrays; include a "question" field with one short question; omit the "message" field
+- action="clarify" ONLY when the amount is completely absent AND cannot be inferred; examples that MUST clarify: "Sold mangoes" → clarify; "I sold some tomatoes" → clarify; "tomatoes transaction" → clarify; do NOT clarify for unclear item names — use confidence="low" instead; do NOT clarify for stock-only updates
+- If the amount IS present, ALWAYS record even if the item is vague (use item="goods") — never clarify when an amount is stated
+- Corrections WITH a stated amount ("actually it was 500 not 5000 for the rice") → action="add_transaction", confidence="medium", default transaction_type="sale" unless context says otherwise
+- Corrections WITHOUT a stated amount ("cancel that", "it was a purchase not a sale") → action="unknown"
+- When action="clarify": transactions and stock_updates MUST be empty arrays []; include a "question" field with one short question in the user's language; omit the "message" field entirely
 - transactions and stock_updates may be empty arrays []
 - currency defaults to $currency if not mentioned; always output the 3-letter ISO code (e.g. KES not KSH)
 - cost defaults to 0 if not mentioned
-- transaction_type="sale" or "income" when the vendor RECEIVES money; "purchase" or "expense" when the vendor PAYS money
-- For "paid 500 for previous sale", "customer paid", "received payment", "someone paid me" → transaction_type="income"
-- For M-Pesa confirmations: "Ksh X received from NAME" → transaction_type="income", item="M-Pesa payment", currency="KES"; "Ksh X sent to NAME" → transaction_type="expense"
+- IMPORTANT: the "action" field must ONLY be one of: "add_transaction", "update_stock", "get_health", "clarify", "unknown" — never "sale", "purchase", "income", or "expense"
+- transaction_type rules (applies to transaction_type field only, not action):
+  - "sale": vendor sold goods or services directly; use when no explicit buy/sell direction is stated (default to sale); examples: "sold tomatoes 80"→sale, "3 packets uji at 30 each"→sale, "customer paid GHS 80 for charcoal"→sale, "sold airtime 500"→sale, "5 mangoes for 200"→sale
+  - "income": vendor received money NOT from a direct product sale — past debt repayment; examples: "paid 500 for previous sale"→income, "customer paid what they owed"→income, "received 1500 from John for debt"→income; these income transactions with clearly stated amounts → confidence="high"
+  - "purchase": vendor explicitly paid money to buy goods to restock or resell — requires "I bought", "I paid for", "from supplier", "purchased", "nilinunua" (Swahili)
+  - "expense": vendor paid money for services or overhead (rent, electricity, transport, bills)
+- For corrections like "actually it was X not Y": transaction_type="sale" unless message explicitly says "purchase" or "bought"; confidence="medium"
+- Corrections WITHOUT a stated amount ("cancel that", "it was a purchase not a sale") → action="unknown"
+- For M-Pesa confirmations: "Ksh X received from NAME" → action="add_transaction", transaction_type="income", item="M-Pesa payment", currency="KES"; "Ksh X sent to NAME" → action="add_transaction", transaction_type="expense", item=the stated purpose if given, currency="KES"
 - When a purchase involves adding goods to inventory for resale, include BOTH a transactions entry (transaction_type="purchase") AND a stock_updates entry in the same response
-- item: if the user says vague words like "stuff", "things", "something", "that thing" use item="goods"
-- confidence levels — these are strict rules, not guidelines:
-  - "high": item name is clearly specific (tomatoes, rice, bread, rent, electricity) AND the amount is a number directly spoken/written by the user — currency defaulting is fine and does NOT reduce confidence
-  - "medium": EITHER the total amount was calculated by you (e.g. "3 at 30 each" → you computed 90), OR the amount is hedged/approximate ("about three fifty", "around 200"), OR the input is a correction ("actually it was X not Y"), OR the item is a category placeholder like "goods" or "stuff" — if ANY of these apply, confidence MUST be "medium" even if the item is known
-  - "low": the item has no meaningful name at all — user said "that thing", "something", "it", or a bare pronoun with zero category hint; the item field will be "goods" but you have no idea what was transacted
+- item: vague category words like "stuff", "things" → item="goods", confidence="medium"; deictic/pronoun references like "that thing", "something", "it", "this" → item="goods", confidence="low"
+- Swahili number words: moja=1, mbili=2, tatu=3, nne=4, tano=5, kumi=10, ishirini=20, thelathini=30, hamsini=50, mia=100 (hundred), elfu=1000 (thousand); examples: "mia moja"=100, "mia mbili"=200, "elfu mbili"=2000; verbs: uza/uliuza=sold, nunua/nilinunua=bought, lipa/nilipa=paid; example: "uza sukari kilo moja mia moja" → sold 1 kg sugar for 100
+- confidence levels — strict rules, not guidelines:
+  - "high": specific named item AND directly stated amount (a number or number word like "two hundred", "fifty bob"); voice fillers (um, uh, like, so) do NOT reduce confidence; currency defaulting does NOT reduce confidence; income payments with clearly stated amounts → high
+  - "medium": if ANY of these apply: (1) YOU computed the total (e.g. "3 at 30 each"→90, "5 crates at 500 each"→2500), (2) approximate amount ("about", "around", "roughly"), (3) input starts with correction phrase ("actually it was", "wait it was", "no it was"), (4) generic category word item ("goods", "stuff") — MUST be medium if any apply
+  - "low": user referred to the item with a deictic or bare pronoun ("that thing", "something", "it", "this thing") — ALWAYS low for these; examples: "sold that thing for 200"→low, "paid me 800 for something"→low, even if item="goods"
 - Output a single JSON object. Start your response with { and end with }. No other text."""
 
 // ── Entry point ───────────────────────────────────────────────────────────────
