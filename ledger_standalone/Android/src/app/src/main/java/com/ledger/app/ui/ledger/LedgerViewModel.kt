@@ -6,8 +6,6 @@ import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.os.Process
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -30,7 +28,7 @@ import com.google.ai.edge.litertlm.Contents
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayOutputStream
-import java.util.Locale
+import java.util.Calendar
 import java.util.concurrent.Executors
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineDispatcher
@@ -84,7 +82,7 @@ data class LedgerUiState(
   val isModelInitialized: Boolean = false,
   val recentTransactions: List<LedgerEntry> = listOf(),
   val lowStockItems: Set<String> = emptySet(),
-  val isSpeaking: Boolean = false,
+  val dashboardPeriod: String = "today",
   val selectedCurrency: String = "KES",
   val validationMode: String = "critical",
   val clarificationPending: Boolean = false,
@@ -126,15 +124,20 @@ constructor(
   }
 
   fun syncFromTools(tools: LedgerTools) {
+    val period = _uiState.value.dashboardPeriod
+    val cutoff = Calendar.getInstance().apply {
+      set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+      set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+      if (period == "month") set(Calendar.DAY_OF_MONTH, 1)
+    }.timeInMillis
+
     val (revenue, cogs, purchases, count, stockItems, stockItemNames, recentTransactions, lowStockItems) =
       synchronized(tools.entries) {
-        val entries = tools.entries.toList()
+        val entries = tools.entries.filter { it.timestampMs >= cutoff }
         val rev = entries.filter { it.transactionType == "sale" || it.transactionType == "income" }.sumOf { it.amount }
         // COGS only applies to sale/income entries; purchase amounts are tracked separately to avoid double-counting
         val cogs = entries.filter { it.transactionType == "sale" || it.transactionType == "income" }.sumOf { it.cost }
         val pur = entries.filter { it.transactionType == "purchase" || it.transactionType == "expense" }.sumOf { it.amount }
-        check(rev >= 0) { "Revenue cannot be negative: $rev" }
-        check(pur >= 0) { "Purchase total cannot be negative: $pur" }
         val stockSnapshot = synchronized(tools.stock) { tools.stock.toMap() }
         val recent = entries.takeLast(30).reversed()
         val lowStock = stockSnapshot.entries
@@ -155,6 +158,10 @@ constructor(
         lowStockItems = lowStockItems,
       )
     }
+  }
+
+  fun setDashboardPeriod(period: String) {
+    _uiState.update { it.copy(dashboardPeriod = period) }
   }
 
   fun saveCurrency(code: String, newSystemPrompt: String) {
@@ -488,58 +495,6 @@ constructor(
     })
   }
 
-  // ── TTS ──────────────────────────────────────────────────────────────────
-
-  private var tts: TextToSpeech? = null
-  private var ttsReady = false
-
-  private fun ensureTts(onReady: () -> Unit, onError: (String) -> Unit = {}) {
-    if (ttsReady) { onReady(); return }
-    tts = TextToSpeech(context) { status ->
-      if (status != TextToSpeech.SUCCESS) {
-        Log.e(TAG, "TTS init failed with status $status")
-        onError("Text-to-speech engine failed to initialize (status $status)")
-        return@TextToSpeech
-      }
-      val langResult = tts?.setLanguage(Locale.US) ?: TextToSpeech.LANG_NOT_SUPPORTED
-      if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-        Log.w(TAG, "TTS language not supported, trying device default")
-        tts?.setLanguage(Locale.getDefault())
-      }
-      tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-        override fun onStart(id: String) = _uiState.update { it.copy(isSpeaking = true) }
-        override fun onDone(id: String) = _uiState.update { it.copy(isSpeaking = false) }
-        @Deprecated("Deprecated in Java")
-        override fun onError(id: String) = _uiState.update { it.copy(isSpeaking = false) }
-      })
-      ttsReady = true
-      onReady()
-    }
-  }
-
-  fun speakSummary(onError: (String) -> Unit = {}) {
-    ensureTts(
-      onReady = {
-        val text = buildTtsSummary(_uiState.value)
-        Log.d(TAG, "TTS speaking: $text")
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "ledger_summary")
-        _uiState.update { it.copy(isSpeaking = true) }
-      },
-      onError = onError,
-    )
-  }
-
-  fun stopSpeaking() {
-    tts?.stop()
-    _uiState.update { it.copy(isSpeaking = false) }
-  }
-
-  override fun onCleared() {
-    super.onCleared()
-    tts?.shutdown()
-    tts = null
-  }
-
   // ── Correction loop ───────────────────────────────────────────────────────
 
   fun deleteTransaction(timestampMs: Long, tools: LedgerTools) {
@@ -606,24 +561,3 @@ constructor(
   }
 }
 
-private fun buildTtsSummary(state: LedgerUiState): String {
-  if (state.transactionCount == 0) return "No transactions recorded yet. Start by telling me what you sold today."
-  val ccy = state.selectedCurrency
-  val sb = StringBuilder("Here is your Ledger summary. ")
-  sb.append("You recorded ${state.transactionCount} transaction${if (state.transactionCount != 1) "s" else ""}. ")
-  sb.append("Revenue: $ccy ${fmtTts(state.revenue)}. ")
-  sb.append("Total cost: $ccy ${fmtTts(state.totalCost)}. ")
-  if (state.netProfit >= 0) {
-    sb.append("Net profit: $ccy ${fmtTts(state.netProfit)}. ")
-    if (state.netProfit > 0) sb.append("Good work today! ")
-  } else {
-    sb.append("Net loss: $ccy ${fmtTts(-state.netProfit)}. Consider reviewing your expenses. ")
-  }
-  if (state.lowStockItems.isNotEmpty()) {
-    val names = state.lowStockItems.take(3).joinToString(", ")
-    sb.append("Warning: ${state.lowStockItems.size} item${if (state.lowStockItems.size != 1) "s are" else " is"} running low on stock: $names.")
-  }
-  return sb.toString()
-}
-
-private fun fmtTts(v: Double): String = String.format(Locale.US, "%.0f", v)

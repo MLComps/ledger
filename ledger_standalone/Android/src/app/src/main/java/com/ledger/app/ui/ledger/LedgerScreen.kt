@@ -73,10 +73,8 @@ import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Sms
-import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -326,6 +324,7 @@ private fun LedgerMainUi(
   var showRitualSummary by remember { mutableStateOf(false) }
   var showDebugOverlay by remember { mutableStateOf(false) }
   var debugTapCount by remember { mutableIntStateOf(0) }
+  var showEmptyExportDialog by remember { mutableStateOf(false) }
 
   fun handleResponse(response: String) {
     viewModel.setLastRawJson(response)
@@ -365,6 +364,15 @@ private fun LedgerMainUi(
     }
   }
 
+  if (showEmptyExportDialog) {
+    AlertDialog(
+      onDismissRequest = { showEmptyExportDialog = false },
+      title = { Text("Nothing to export") },
+      text = { Text("No transactions have been recorded yet. Add some transactions before exporting.") },
+      confirmButton = { TextButton(onClick = { showEmptyExportDialog = false }) { Text("OK") } },
+    )
+  }
+
   if (pendingTransactions.isNotEmpty()) {
     ConfirmTransactionsDialog(
       transactions = pendingTransactions,
@@ -376,6 +384,7 @@ private fun LedgerMainUi(
   val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
 
   fun exportAndShare() {
+    if (uiState.transactionCount == 0) { showEmptyExportDialog = true; return }
     viewModel.exportPdf(
       context = context,
       onDone = { uri ->
@@ -478,6 +487,7 @@ private fun LedgerMainUi(
           onTogglePrivacy = { privacyMode.value = !privacyMode.value },
           onExportPdf = { exportAndShare() },
           onExportCsv = {
+            if (uiState.transactionCount == 0) { showEmptyExportDialog = true; return@HeroBalanceCard }
             viewModel.exportCsv(
               context = context,
               onDone = { uri ->
@@ -491,7 +501,11 @@ private fun LedgerMainUi(
               onError = onError,
             )
           },
-          onSpeakToggle = { if (uiState.isSpeaking) viewModel.stopSpeaking() else viewModel.speakSummary(onError = onError) },
+          dashboardPeriod = uiState.dashboardPeriod,
+          onPeriodChange = { period ->
+            viewModel.setDashboardPeriod(period)
+            viewModel.syncFromTools(ledgerTools)
+          },
         )
 
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
@@ -819,7 +833,8 @@ private fun HeroBalanceCard(
   onTogglePrivacy: () -> Unit,
   onExportPdf: () -> Unit,
   onExportCsv: () -> Unit,
-  onSpeakToggle: () -> Unit,
+  dashboardPeriod: String,
+  onPeriodChange: (String) -> Unit,
   modifier: Modifier = Modifier,
 ) {
   val mask = "••••"
@@ -885,24 +900,51 @@ private fun HeroBalanceCard(
                 tint = Color.White.copy(alpha = if (privacyModeEnabled) 1f else 0.65f),
               )
             }
-            IconButton(onClick = onSpeakToggle, modifier = Modifier.size(32.dp)) {
-              Icon(
-                if (uiState.isSpeaking) Icons.Rounded.StopCircle else Icons.Rounded.VolumeUp,
-                contentDescription = "Speak",
-                modifier = Modifier.size(18.dp),
-                tint = Color.White.copy(alpha = 0.85f),
-              )
-            }
-            IconButton(onClick = onExportCsv, modifier = Modifier.size(32.dp)) {
-              Icon(Icons.Rounded.GridOn, contentDescription = "Export CSV", modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.85f))
-            }
-            IconButton(onClick = onExportPdf, modifier = Modifier.size(32.dp)) {
-              Icon(Icons.Rounded.Share, contentDescription = "Export PDF", modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.85f))
+            var showShareMenu by remember { mutableStateOf(false) }
+            Box {
+              IconButton(onClick = { showShareMenu = true }, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Rounded.Share, contentDescription = "Export", modifier = Modifier.size(18.dp), tint = Color.White.copy(alpha = 0.85f))
+              }
+              DropdownMenu(expanded = showShareMenu, onDismissRequest = { showShareMenu = false }) {
+                DropdownMenuItem(
+                  text = { Text("Export CSV") },
+                  leadingIcon = { Icon(Icons.Rounded.GridOn, null, modifier = Modifier.size(16.dp)) },
+                  onClick = { showShareMenu = false; onExportCsv() },
+                )
+                DropdownMenuItem(
+                  text = { Text("Export PDF") },
+                  leadingIcon = { Icon(Icons.Rounded.Share, null, modifier = Modifier.size(16.dp)) },
+                  onClick = { showShareMenu = false; onExportPdf() },
+                )
+              }
             }
           }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+
+        // Period toggle
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          listOf("today" to "Today", "month" to "Month").forEach { (value, label) ->
+            val selected = dashboardPeriod == value
+            Box(
+              modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = if (selected) 0.25f else 0.08f))
+                .clickable { onPeriodChange(value) }
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+              Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = Color.White.copy(alpha = if (selected) 1f else 0.6f),
+              )
+            }
+          }
+        }
+
+        Spacer(Modifier.height(10.dp))
 
         // Big net profit
         AnimatedContent(
