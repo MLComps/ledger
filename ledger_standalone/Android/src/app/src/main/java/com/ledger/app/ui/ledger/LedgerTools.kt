@@ -151,7 +151,9 @@ class LedgerTools(
       entries
         .filter { it.transactionType == "sale" || it.transactionType == "income" }
         .sumOf { it.amount }
-    val cogs = entries.sumOf { it.cost }
+    val cogs = entries
+      .filter { it.transactionType == "sale" || it.transactionType == "income" }
+      .sumOf { it.cost }
     val purchases =
       entries
         .filter { it.transactionType == "purchase" || it.transactionType == "expense" }
