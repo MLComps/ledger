@@ -18,6 +18,7 @@ import com.ledger.app.runtime.LlmModelHelper
 import com.ledger.app.runtime.LlmModelInstance
 import com.ledger.app.runtime.ResultListener
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Channel
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Conversation
@@ -50,6 +51,7 @@ object LlmChatModelHelper : LlmModelHelper {
     systemInstruction: Contents?,
     tools: List<ToolProvider>,
     enableConversationConstrainedDecoding: Boolean,
+    enableThinking: Boolean,
     coroutineScope: CoroutineScope?,
   ) {
     val maxTokens =
@@ -58,25 +60,14 @@ object LlmChatModelHelper : LlmModelHelper {
     val topP = model.getFloatConfigValue(key = ConfigKeys.TOPP, defaultValue = DEFAULT_TOPP)
     val temperature =
       model.getFloatConfigValue(key = ConfigKeys.TEMPERATURE, defaultValue = DEFAULT_TEMPERATURE)
-    val visionBackend = Backend.CPU()
     val shouldEnableImage = supportImage
     val shouldEnableAudio = supportAudio
     val preferredBackend = Backend.CPU()
     Log.d(TAG, "Preferred backend: $preferredBackend")
 
     val modelPath = model.getPath(context = context)
-    val engineConfig =
-      EngineConfig(
-        modelPath = modelPath,
-        backend = preferredBackend,
-        visionBackend = if (shouldEnableImage) visionBackend else null,
-        audioBackend = if (shouldEnableAudio) Backend.CPU() else null,
-        maxNumTokens = maxTokens,
-        cacheDir =
-          if (modelPath.startsWith("/data/local/tmp"))
-            context.getExternalFilesDir(null)?.absolutePath
-          else null,
-      )
+    val cacheDir = if (modelPath.startsWith("/data/local/tmp"))
+      context.getExternalFilesDir(null)?.absolutePath else null
 
     var supportsSpeculativeDecoding = false
     try {
@@ -102,12 +93,40 @@ object LlmChatModelHelper : LlmModelHelper {
       }
       ExperimentalFlags.enableSpeculativeDecoding = speculativeDecoding
       Log.d(TAG, "Speculative decoding enabled: $speculativeDecoding")
-      val engine = Engine(engineConfig)
-      engine.initialize()
+
+      // Try GPU vision first; fall back to CPU if the device doesn't support it.
+      val engine = run {
+        if (shouldEnableImage) {
+          try {
+            Engine(EngineConfig(
+              modelPath = modelPath, backend = preferredBackend,
+              visionBackend = Backend.GPU(), audioBackend = if (shouldEnableAudio) Backend.CPU() else null,
+              maxNumTokens = maxTokens, cacheDir = cacheDir,
+            )).also { it.initialize() }
+          } catch (e: Exception) {
+            Log.w(TAG, "GPU vision backend failed, falling back to CPU: ${e.message}")
+            Engine(EngineConfig(
+              modelPath = modelPath, backend = preferredBackend,
+              visionBackend = Backend.CPU(), audioBackend = if (shouldEnableAudio) Backend.CPU() else null,
+              maxNumTokens = maxTokens, cacheDir = cacheDir,
+            )).also { it.initialize() }
+          }
+        } else {
+          Engine(EngineConfig(
+            modelPath = modelPath, backend = preferredBackend,
+            visionBackend = null, audioBackend = if (shouldEnableAudio) Backend.CPU() else null,
+            maxNumTokens = maxTokens, cacheDir = cacheDir,
+          )).also { it.initialize() }
+        }
+      }
       ExperimentalFlags.enableSpeculativeDecoding = false
 
       ExperimentalFlags.enableConversationConstrainedDecoding =
         enableConversationConstrainedDecoding
+      ExperimentalFlags.filterChannelContentFromKvCache = enableThinking
+      val thinkingChannels = if (enableThinking)
+        listOf(Channel(channelName = "thought", start = "<thinking>", end = "</thinking>"))
+      else emptyList()
       val conversation =
         engine.createConversation(
           ConversationConfig(
@@ -123,9 +142,12 @@ object LlmChatModelHelper : LlmModelHelper {
               },
             systemInstruction = systemInstruction,
             tools = tools,
+            automaticToolCalling = tools.isNotEmpty(),
+            channels = thinkingChannels,
           )
         )
       ExperimentalFlags.enableConversationConstrainedDecoding = false
+      ExperimentalFlags.filterChannelContentFromKvCache = false
       model.instance = LlmModelInstance(engine = engine, conversation = conversation)
     } catch (e: Exception) {
       onDone(cleanUpMediapipeTaskErrorMessage(e.message ?: "Unknown error"))
@@ -142,6 +164,7 @@ object LlmChatModelHelper : LlmModelHelper {
     systemInstruction: Contents?,
     tools: List<ToolProvider>,
     enableConversationConstrainedDecoding: Boolean,
+    enableThinking: Boolean,
   ) {
     try {
       Log.d(TAG, "Resetting conversation for model '${model.name}'")
@@ -161,6 +184,10 @@ object LlmChatModelHelper : LlmModelHelper {
         )
       ExperimentalFlags.enableConversationConstrainedDecoding =
         enableConversationConstrainedDecoding
+      ExperimentalFlags.filterChannelContentFromKvCache = enableThinking
+      val thinkingChannels = if (enableThinking)
+        listOf(Channel(channelName = "thought", start = "<thinking>", end = "</thinking>"))
+      else emptyList()
       val newConversation =
         engine.createConversation(
           ConversationConfig(
@@ -176,9 +203,12 @@ object LlmChatModelHelper : LlmModelHelper {
               },
             systemInstruction = systemInstruction,
             tools = tools,
+            automaticToolCalling = tools.isNotEmpty(),
+            channels = thinkingChannels,
           )
         )
       ExperimentalFlags.enableConversationConstrainedDecoding = false
+      ExperimentalFlags.filterChannelContentFromKvCache = false
       instance.conversation = newConversation
 
       Log.d(TAG, "Resetting done")

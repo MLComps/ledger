@@ -23,6 +23,7 @@ interface LlmModelHelper {
     systemInstruction: Contents? = null,
     tools: List<ToolProvider> = listOf(),
     enableConversationConstrainedDecoding: Boolean = false,
+    enableThinking: Boolean = false,
     coroutineScope: CoroutineScope? = null,
   )
 
@@ -33,6 +34,7 @@ interface LlmModelHelper {
     systemInstruction: Contents? = null,
     tools: List<ToolProvider> = listOf(),
     enableConversationConstrainedDecoding: Boolean = false,
+    enableThinking: Boolean = false,
   )
 
   fun cleanUp(model: Model, onDone: () -> Unit)

@@ -28,6 +28,12 @@ interface DataStoreRepository {
   fun clearHfAccessToken()
   fun saveValidationMode(mode: String)
   fun readValidationMode(): String
+  fun saveSmsEnabled(enabled: Boolean)
+  fun readSmsEnabled(): Boolean
+  fun smsEnabledFlow(): Flow<Boolean>
+  fun saveThemeMode(mode: String)
+  fun readThemeMode(): String
+  fun themeModeFlow(): Flow<String>
 }
 
 class DefaultDataStoreRepository(private val context: Context) : DataStoreRepository {
@@ -37,6 +43,8 @@ class DefaultDataStoreRepository(private val context: Context) : DataStoreReposi
   private val KEY_HF_ACCESS_TOKEN = stringPreferencesKey("hf_access_token")
   private val KEY_HF_TOKEN_EXPIRES_AT = longPreferencesKey("hf_token_expires_at")
   private val KEY_VALIDATION_MODE = stringPreferencesKey("validation_mode")
+  private val KEY_SMS_ENABLED = booleanPreferencesKey("sms_enabled")
+  private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
 
   override fun saveTextInputHistory(history: List<String>) {
     runBlocking {
@@ -115,7 +123,37 @@ class DefaultDataStoreRepository(private val context: Context) : DataStoreReposi
 
   override fun readValidationMode(): String {
     return runBlocking {
-      context.dataStore.data.first()[KEY_VALIDATION_MODE] ?: "critical"
+      context.dataStore.data.first()[KEY_VALIDATION_MODE] ?: "all"
     }
   }
+
+  override fun saveSmsEnabled(enabled: Boolean) {
+    runBlocking {
+      context.dataStore.edit { prefs -> prefs[KEY_SMS_ENABLED] = enabled }
+    }
+  }
+
+  override fun readSmsEnabled(): Boolean {
+    return runBlocking {
+      context.dataStore.data.first()[KEY_SMS_ENABLED] ?: true
+    }
+  }
+
+  override fun smsEnabledFlow(): Flow<Boolean> =
+    context.dataStore.data.map { it[KEY_SMS_ENABLED] ?: true }
+
+  override fun saveThemeMode(mode: String) {
+    runBlocking {
+      context.dataStore.edit { prefs -> prefs[KEY_THEME_MODE] = mode }
+    }
+  }
+
+  override fun readThemeMode(): String {
+    return runBlocking {
+      context.dataStore.data.first()[KEY_THEME_MODE] ?: "system"
+    }
+  }
+
+  override fun themeModeFlow(): Flow<String> =
+    context.dataStore.data.map { it[KEY_THEME_MODE] ?: "system" }
 }

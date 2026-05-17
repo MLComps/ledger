@@ -4,12 +4,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,9 +24,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.TrendingDown
+import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Receipt
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
@@ -52,21 +56,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ledger.app.db.TransactionEntity
+import com.ledger.app.ui.common.SensoryBackground
 import com.ledger.app.ui.ledger.LedgerTools
 import com.ledger.app.ui.ledger.LedgerViewModel
 import com.ledger.app.ui.theme.LocalPrivacyMode
-import com.valentinilk.shimmer.shimmer
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-
-private val typeColorMap = mapOf(
-  "sale" to Color(0xFF2E7D32),
-  "income" to Color(0xFF2E7D32),
-  "purchase" to Color(0xFFC62828),
-  "expense" to Color(0xFFC62828),
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,53 +75,101 @@ fun HistoryScreen(
   val privacyMode by LocalPrivacyMode.current
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-  // Group by calendar day
   val grouped = remember(allTransactions) {
     allTransactions
       .sortedByDescending { it.timestampMs }
       .groupBy { dayKey(it.timestampMs) }
-      .entries.sortedByDescending { it.key }
+      .entries
+      .sortedByDescending { it.key }
+      .map { it.key to it.value }
   }
 
-  Column(modifier = Modifier.fillMaxSize()) {
-    LargeTopAppBar(
-      title = { Text("History") },
-      scrollBehavior = scrollBehavior,
-      colors = TopAppBarDefaults.largeTopAppBarColors(
-        containerColor = MaterialTheme.colorScheme.surface,
-        scrolledContainerColor = MaterialTheme.colorScheme.surface,
-      ),
-    )
+  Box(modifier = Modifier.fillMaxSize()) {
+    SensoryBackground()
 
-    if (allTransactions.isEmpty()) {
-      HistoryEmptyState()
-    } else {
-      LazyColumn(
-        modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp),
-      ) {
-        grouped.forEach { (_, txList) ->
-          stickyHeader {
-            DateHeader(timestampMs = txList.first().timestampMs)
-          }
-          itemsIndexed(
-            items = txList,
-            key = { _, tx -> tx.id },
-          ) { index, tx ->
+    Column(modifier = Modifier.fillMaxSize()) {
+      LargeTopAppBar(
+        title = { Text("History", fontWeight = FontWeight.Black) },
+        scrollBehavior = scrollBehavior,
+        colors = TopAppBarDefaults.largeTopAppBarColors(
+          containerColor = Color.Transparent,
+          scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+        ),
+      )
+
+      if (allTransactions.isEmpty()) {
+        HistoryEmptyState()
+      } else {
+        LazyColumn(
+          modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp, ),
+          verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+          itemsIndexed(grouped, key = { _, pair -> pair.first }) { index, (_, txList) ->
             var visible by remember { mutableStateOf(false) }
-            LaunchedEffect(tx.id) { visible = true }
+            LaunchedEffect(txList.first().id) { visible = true }
 
             AnimatedVisibility(
               visible = visible,
-              enter = fadeIn(tween(180, delayMillis = (index * 30).coerceAtMost(240))) +
-                slideInVertically(tween(180, delayMillis = (index * 30).coerceAtMost(240))) { it / 3 },
+              enter = fadeIn(tween(240, delayMillis = (index * 60).coerceAtMost(300))) +
+                slideInVertically(tween(240, delayMillis = (index * 60).coerceAtMost(300))) { it / 4 },
             ) {
-              SwipeableTransactionRow(
-                tx = tx,
+              DayCard(
+                txList = txList,
                 privacyMode = privacyMode,
-                onDelete = { viewModel.deleteTransaction(tx.timestampMs, ledgerTools) },
+                onDelete = { timestamp -> viewModel.deleteTransaction(timestamp, ledgerTools) },
               )
             }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun DayCard(
+  txList: List<TransactionEntity>,
+  privacyMode: Boolean,
+  onDelete: (Long) -> Unit,
+) {
+  val cardShape = RoundedCornerShape(24.dp)
+
+  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Text(
+      text = formatDateHeader(txList.first().timestampMs),
+      style = MaterialTheme.typography.labelMedium,
+      fontWeight = FontWeight.Bold,
+      color = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.padding(start = 4.dp),
+    )
+
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(cardShape)
+        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.4f))
+        .border(
+          width = 1.dp,
+          brush = Brush.verticalGradient(
+            listOf(Color.White.copy(alpha = 0.25f), Color.Transparent)
+          ),
+          shape = cardShape,
+        )
+    ) {
+      Column {
+        txList.forEachIndexed { index, tx ->
+          SwipeableTransactionRow(
+            tx = tx,
+            privacyMode = privacyMode,
+            onDelete = { onDelete(tx.timestampMs) },
+          )
+          if (index < txList.size - 1) {
+            HorizontalDivider(
+              modifier = Modifier.padding(horizontal = 20.dp),
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+              thickness = 0.5.dp,
+            )
           }
         }
       }
@@ -151,19 +196,22 @@ private fun SwipeableTransactionRow(
     backgroundContent = {
       val color by animateColorAsState(
         targetValue = if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart)
-          MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surface,
+          MaterialTheme.colorScheme.errorContainer
+        else Color.Transparent,
         label = "swipe_bg",
       )
       Box(
         modifier = Modifier.fillMaxSize().background(color).padding(horizontal = 24.dp),
         contentAlignment = Alignment.CenterEnd,
       ) {
-        Icon(
-          Icons.Rounded.Delete,
-          contentDescription = "Delete",
-          tint = MaterialTheme.colorScheme.onErrorContainer,
-          modifier = Modifier.size(22.dp),
-        )
+        if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+          Icon(
+            Icons.Rounded.Delete,
+            contentDescription = "Delete",
+            tint = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.size(22.dp),
+          )
+        }
       }
     },
   ) {
@@ -173,36 +221,50 @@ private fun SwipeableTransactionRow(
 
 @Composable
 private fun TransactionRow(tx: TransactionEntity, privacyMode: Boolean) {
-  val typeColor = typeColorMap[tx.transactionType] ?: MaterialTheme.colorScheme.onSurfaceVariant
+  val isIncome = tx.transactionType == "sale" || tx.transactionType == "income"
+  val badgeGradient = if (isIncome)
+    Brush.linearGradient(listOf(Color(0xFF66BB6A), Color(0xFF2E7D32)))
+  else
+    Brush.linearGradient(listOf(Color(0xFFEF5350), Color(0xFFC62828)))
+  val amountColor = if (isIncome) Color(0xFF4CAF50) else Color(0xFFEF5350)
+
   val confidenceColor = when (tx.confidence) {
-    "low" -> Color(0xFFC62828)
-    "medium" -> Color(0xFFE65100)
+    "low" -> Color(0xFFEF5350)
+    "medium" -> Color(0xFFFF7043)
     else -> Color.Transparent
   }
 
   Row(
     modifier = Modifier
       .fillMaxWidth()
-      .background(MaterialTheme.colorScheme.surface)
-      .padding(horizontal = 16.dp, vertical = 10.dp),
+      .padding(horizontal = 20.dp, vertical = 14.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    // Type colour stripe
     Box(
       modifier = Modifier
-        .width(3.dp)
-        .height(40.dp)
+        .size(44.dp)
         .clip(CircleShape)
-        .background(typeColor),
-    )
-    Spacer(Modifier.width(12.dp))
+        .background(badgeGradient),
+      contentAlignment = Alignment.Center,
+    ) {
+      Icon(
+        imageVector = if (isIncome) Icons.AutoMirrored.Rounded.TrendingUp
+                      else Icons.AutoMirrored.Rounded.TrendingDown,
+        contentDescription = null,
+        modifier = Modifier.size(22.dp),
+        tint = Color.White,
+      )
+    }
+
+    Spacer(Modifier.width(14.dp))
 
     Column(modifier = Modifier.weight(1f)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
           text = tx.item,
           style = MaterialTheme.typography.bodyMedium,
-          fontWeight = FontWeight.SemiBold,
+          fontWeight = FontWeight.ExtraBold,
+          color = MaterialTheme.colorScheme.onSurface,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
           modifier = Modifier.weight(1f, fill = false),
@@ -217,38 +279,23 @@ private fun TransactionRow(tx: TransactionEntity, privacyMode: Boolean) {
           )
         }
       }
+      Spacer(Modifier.height(2.dp))
       Text(
         text = "${tx.transactionType}  ·  ${fmtQty(tx.quantity)} ${tx.unit}",
         style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
       )
     }
 
     Spacer(Modifier.width(12.dp))
+
     Text(
       text = if (privacyMode) "••••" else "${tx.currency} ${formatAmount(tx.amount)}",
-      style = MaterialTheme.typography.bodySmall,
-      fontWeight = FontWeight.Bold,
-      color = if (privacyMode) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f) else typeColor,
+      style = MaterialTheme.typography.bodyMedium,
+      fontWeight = FontWeight.Black,
+      color = if (privacyMode) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+              else amountColor,
       textAlign = TextAlign.End,
-    )
-  }
-}
-
-@Composable
-private fun DateHeader(timestampMs: Long) {
-  val label = remember(timestampMs) { formatDateHeader(timestampMs) }
-  Box(
-    modifier = Modifier
-      .fillMaxWidth()
-      .background(MaterialTheme.colorScheme.surface)
-      .padding(horizontal = 16.dp, vertical = 6.dp),
-  ) {
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelMedium,
-      color = MaterialTheme.colorScheme.primary,
-      fontWeight = FontWeight.SemiBold,
     )
   }
 }
@@ -264,21 +311,25 @@ private fun HistoryEmptyState() {
       modifier = Modifier
         .size(80.dp)
         .clip(CircleShape)
-        .background(MaterialTheme.colorScheme.primaryContainer),
+        .background(
+          Brush.linearGradient(
+            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
+          )
+        ),
       contentAlignment = Alignment.Center,
     ) {
       Icon(
-        Icons.Rounded.Receipt,
+        Icons.AutoMirrored.Rounded.TrendingUp,
         contentDescription = null,
         modifier = Modifier.size(40.dp),
-        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+        tint = Color.Black,
       )
     }
     Spacer(Modifier.height(24.dp))
     Text(
       "No transactions yet",
       style = MaterialTheme.typography.titleMedium,
-      fontWeight = FontWeight.SemiBold,
+      fontWeight = FontWeight.ExtraBold,
       color = MaterialTheme.colorScheme.onSurface,
     )
     Spacer(Modifier.height(8.dp))
@@ -288,26 +339,6 @@ private fun HistoryEmptyState() {
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       textAlign = TextAlign.Center,
     )
-  }
-}
-
-@Composable
-private fun ShimmerTransactionRow() {
-  Row(
-    modifier = Modifier
-      .fillMaxWidth()
-      .shimmer()
-      .padding(horizontal = 16.dp, vertical = 12.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Box(modifier = Modifier.width(3.dp).height(40.dp).clip(CircleShape).background(Color.LightGray))
-    Spacer(Modifier.width(12.dp))
-    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      Box(modifier = Modifier.fillMaxWidth(0.55f).height(12.dp).clip(RoundedCornerShape(4.dp)).background(Color.LightGray))
-      Box(modifier = Modifier.fillMaxWidth(0.35f).height(10.dp).clip(RoundedCornerShape(4.dp)).background(Color.LightGray))
-    }
-    Spacer(Modifier.width(12.dp))
-    Box(modifier = Modifier.width(60.dp).height(12.dp).clip(RoundedCornerShape(4.dp)).background(Color.LightGray))
   }
 }
 

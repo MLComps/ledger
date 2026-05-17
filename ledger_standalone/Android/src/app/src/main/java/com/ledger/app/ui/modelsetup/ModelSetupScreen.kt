@@ -341,7 +341,7 @@ private fun StatusSection(
       val progress = if (status.totalBytes > 0) status.receivedBytes.toFloat() / status.totalBytes else 0f
       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-          if (status.status == ModelDownloadStatusType.UNZIPPING) "Extracting Intelligence..." 
+          if (status.status == ModelDownloadStatusType.UNZIPPING) "Extracting Intelligence..."
           else "Downloading Local Partner (${(progress * 100).toInt()}%)...",
           style = MaterialTheme.typography.labelMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant

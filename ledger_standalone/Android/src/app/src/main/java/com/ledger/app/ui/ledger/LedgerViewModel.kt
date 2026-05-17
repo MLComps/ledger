@@ -13,6 +13,7 @@ import com.ledger.app.R
 import com.ledger.app.data.BuiltInTaskId
 import com.ledger.app.data.DataStoreRepository
 import com.ledger.app.data.Model
+import com.ledger.app.data.ModelCapability
 import com.ledger.app.db.LedgerRepository
 import com.ledger.app.db.TransactionEntity
 import com.ledger.app.data.SAMPLE_RATE
@@ -25,6 +26,8 @@ import com.ledger.app.ui.common.chat.ChatMessageWarning
 import com.ledger.app.ui.common.chat.ChatSide
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
+import com.google.ai.edge.litertlm.ToolProvider
+import com.google.ai.edge.litertlm.tool
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayOutputStream
@@ -44,7 +47,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-private const val LOW_STOCK_THRESHOLD = 5.0
+private const val LOW_STOCK_THRESHOLD = 3.0
 
 private const val TAG = "LedgerViewModel"
 
@@ -84,9 +87,9 @@ data class LedgerUiState(
   val lowStockItems: Set<String> = emptySet(),
   val dashboardPeriod: String = "today",
   val selectedCurrency: String = "KES",
-  val validationMode: String = "critical",
-  val clarificationPending: Boolean = false,
-  val lastRawJson: String = "",
+  val validationMode: String = "all",
+  val smsEnabled: Boolean = true,
+  val themeMode: String = "system",
 )
 
 @HiltViewModel
@@ -108,17 +111,30 @@ constructor(
   private val autoResetThreshold = 8
   private var lastSystemPrompt: String = ""
   private var lastModel: Model? = null
+  private var lastTools: List<ToolProvider> = emptyList()
 
   init {
     _uiState.update {
       it.copy(
         selectedCurrency = dataStoreRepository.readCurrencyCode(),
         validationMode = dataStoreRepository.readValidationMode(),
+        smsEnabled = dataStoreRepository.readSmsEnabled(),
+        themeMode = dataStoreRepository.readThemeMode(),
       )
     }
     viewModelScope.launch {
       dataStoreRepository.currencyCodeFlow().collect { code ->
         _uiState.update { it.copy(selectedCurrency = code) }
+      }
+    }
+    viewModelScope.launch {
+      dataStoreRepository.smsEnabledFlow().collect { enabled ->
+        _uiState.update { it.copy(smsEnabled = enabled) }
+      }
+    }
+    viewModelScope.launch {
+      dataStoreRepository.themeModeFlow().collect { mode ->
+        _uiState.update { it.copy(themeMode = mode) }
       }
     }
   }
@@ -179,6 +195,20 @@ constructor(
     _uiState.update { it.copy(validationMode = mode) }
   }
 
+  fun saveSmsEnabled(enabled: Boolean) {
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.saveSmsEnabled(enabled)
+    }
+    _uiState.update { it.copy(smsEnabled = enabled) }
+  }
+
+  fun saveThemeMode(mode: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+      dataStoreRepository.saveThemeMode(mode)
+    }
+    _uiState.update { it.copy(themeMode = mode) }
+  }
+
   fun exportPdf(context: Context, onDone: (Uri) -> Unit, onError: (String) -> Unit) {
     val snapshot = _uiState.value
     viewModelScope.launch(Dispatchers.IO) {
@@ -209,11 +239,13 @@ constructor(
     context: Context,
     model: Model,
     systemPrompt: String,
+    tools: List<ToolProvider> = emptyList(),
     onError: (String) -> Unit,
   ) {
     _uiState.update { it.copy(selectedModel = model) }
     lastSystemPrompt = systemPrompt
     lastModel = model
+    lastTools = tools
     viewModelScope.launch(inferenceDispatcher) {
       Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
       LlmChatModelHelper.initialize(
@@ -230,8 +262,9 @@ constructor(
           }
         },
         systemInstruction = Contents.of(systemPrompt),
-        tools = emptyList(),
+        tools = lastTools,
         enableConversationConstrainedDecoding = false,
+        enableThinking = model.capabilities.contains(ModelCapability.LLM_THINKING),
       )
     }
   }
@@ -489,8 +522,9 @@ constructor(
           }
         },
         systemInstruction = Contents.of(lastSystemPrompt),
-        tools = emptyList(),
+        tools = lastTools,
         enableConversationConstrainedDecoding = false,
+        enableThinking = model.capabilities.contains(ModelCapability.LLM_THINKING),
       )
     })
   }
@@ -514,14 +548,6 @@ constructor(
     _uiState.update { it.copy(processing = processing) }
   }
 
-  fun setClarificationPending(pending: Boolean) {
-    _uiState.update { it.copy(clarificationPending = pending) }
-  }
-
-  fun setLastRawJson(json: String) {
-    _uiState.update { it.copy(lastRawJson = json) }
-  }
-
   fun setResettingEngine(resetting: Boolean) {
     _uiState.update { it.copy(resettingEngine = resetting) }
   }
@@ -530,8 +556,10 @@ constructor(
     context: Context,
     model: Model,
     systemPrompt: String,
+    tools: List<ToolProvider> = lastTools,
     onError: (String) -> Unit,
   ) {
+    lastTools = tools
     viewModelScope.launch(inferenceDispatcher) {
       Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
       setResettingEngine(true)
@@ -552,8 +580,9 @@ constructor(
               addMessage(ChatMessageWarning(context.getString(R.string.engin_reset_message)))
             },
             systemInstruction = Contents.of(systemPrompt),
-            tools = emptyList(),
+            tools = lastTools,
             enableConversationConstrainedDecoding = false,
+            enableThinking = model.capabilities.contains(ModelCapability.LLM_THINKING),
           )
         },
       )

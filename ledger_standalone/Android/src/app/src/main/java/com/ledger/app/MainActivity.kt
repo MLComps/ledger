@@ -6,6 +6,7 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -17,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ledger.app.data.DataStoreRepository
 import com.ledger.app.data.Model
 import com.ledger.app.db.LedgerRepository
 import com.ledger.app.ui.ledger.LedgerTools
@@ -36,6 +38,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
   @Inject lateinit var ledgerRepository: LedgerRepository
+  @Inject lateinit var dataStoreRepository: DataStoreRepository
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(null)
@@ -52,7 +55,13 @@ class MainActivity : ComponentActivity() {
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
     setContent {
-      LedgerTheme {
+      val themeMode by dataStoreRepository.themeModeFlow().collectAsState(initial = dataStoreRepository.readThemeMode())
+      val darkTheme = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> isSystemInDarkTheme()
+      }
+      LedgerTheme(darkTheme = darkTheme) {
         var showSplash by remember { mutableStateOf(true) }
         
         if (showSplash) {
