@@ -29,9 +29,11 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -105,8 +107,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -144,8 +144,8 @@ import com.ledger.app.ui.common.SensoryBackground
 import com.ledger.app.ui.theme.LocalPrivacyMode
 import com.ledger.app.common.HapticManager
 import java.io.File
-import java.util.Locale
 import java.util.Calendar
+import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONObject
 
@@ -351,7 +351,12 @@ private fun LedgerMainUi(
           else hapticManager.playExpenseThud()
         }
         if (needsConfirm.isNotEmpty()) pendingTransactions = needsConfirm
-        viewModel.addMessage(ChatMessageText(content = result.message, side = ChatSide.AGENT))
+        val displayMessage = if (result.message.isBlank() || result.message == "Done.") {
+          autoApply.firstOrNull()?.let { tx ->
+            "${tx.transactionType.replaceFirstChar { it.uppercase() }} recorded: ${tx.item} — ${tx.currency} ${formatAmount(tx.amount)}"
+          } ?: result.message
+        } else result.message
+        viewModel.addMessage(ChatMessageText(content = displayMessage, side = ChatSide.AGENT))
       }
       is ParseResult.Empty -> {
         viewModel.setClarificationPending(false)
@@ -388,10 +393,14 @@ private fun LedgerMainUi(
   var smsPermissionGranted by remember {
     mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED)
   }
-  val smsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> smsPermissionGranted = granted }
+  var smsEnabled by remember(smsPermissionGranted) { mutableStateOf(smsPermissionGranted) }
+  val smsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    smsPermissionGranted = granted
+    if (granted) smsEnabled = true
+  }
 
-  DisposableEffect(smsPermissionGranted, model.name) {
-    if (!smsPermissionGranted || model.instance == null) return@DisposableEffect onDispose {}
+  DisposableEffect(smsPermissionGranted, smsEnabled, model.name) {
+    if (!smsPermissionGranted || !smsEnabled || model.instance == null) return@DisposableEffect onDispose {}
     val receiver = LedgerSmsReceiver { sender, body ->
       viewModel.sendSmsMessage(model, sender, body, onDone = { handleResponse(it) }, onError = onError)
     }
@@ -429,6 +438,8 @@ private fun LedgerMainUi(
     uri ?: return@rememberLauncherForActivityResult
     viewModel.sendWavFileMessage(model, uri, onDone = { handleResponse(it) }, onError = onError)
   }
+
+  LaunchedEffect(Unit) { viewModel.syncFromTools(ledgerTools) }
 
   LaunchedEffect(uiState.messages.size) {
     if (uiState.messages.isNotEmpty()) scrollState.animateScrollTo(Int.MAX_VALUE)
@@ -491,26 +502,50 @@ private fun LedgerMainUi(
             else -> "Quick Sale" to Icons.Rounded.Add
           }
         }
+        var showFabMenu by remember { mutableStateOf(false) }
 
+        @OptIn(ExperimentalFoundationApi::class)
         Box(modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
-          Button(
-            onClick = {
-              hapticManager.playTick()
-              if (fabLabel == "Close Day") showRitualSummary = true
-              else if (fabLabel == "Restock") inputText = "Restocked "
-              else inputText = "Sold "
-            },
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-              containerColor = Color.White.copy(alpha = 0.25f),
-              contentColor = Color.White
-            ),
-            modifier = Modifier.height(32.dp),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+          Box(
+            modifier = Modifier
+              .height(32.dp)
+              .clip(RoundedCornerShape(12.dp))
+              .background(Color.White.copy(alpha = 0.25f))
+              .combinedClickable(
+                onClick = {
+                  hapticManager.playTick()
+                  when (fabLabel) {
+                    "Close Day" -> showRitualSummary = true
+                    "Restock" -> inputText = "Restocked "
+                    else -> inputText = "Sold "
+                  }
+                },
+                onLongClick = { hapticManager.playTick(); showFabMenu = true },
+              )
+              .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
           ) {
-            Icon(fabIcon, null, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(fabLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              Icon(fabIcon, null, modifier = Modifier.size(14.dp), tint = Color.White)
+              Text(fabLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+          }
+          DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
+            DropdownMenuItem(
+              text = { Text("Quick Sale") },
+              leadingIcon = { Icon(Icons.Rounded.Add, null, modifier = Modifier.size(16.dp)) },
+              onClick = { showFabMenu = false; inputText = "Sold " },
+            )
+            DropdownMenuItem(
+              text = { Text("Restock") },
+              leadingIcon = { Icon(Icons.Rounded.Inventory2, null, modifier = Modifier.size(16.dp)) },
+              onClick = { showFabMenu = false; inputText = "Restocked " },
+            )
+            DropdownMenuItem(
+              text = { Text("Close Day") },
+              leadingIcon = { Icon(Icons.Rounded.History, null, modifier = Modifier.size(16.dp)) },
+              onClick = { showFabMenu = false; showRitualSummary = true },
+            )
           }
         }
       }
@@ -562,9 +597,15 @@ private fun LedgerMainUi(
           leadingIcon = { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(14.dp)) },
         )
         FilterChip(
-          selected = smsPermissionGranted,
-          onClick = { if (!smsPermissionGranted) smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS) },
-          label = { Text(if (smsPermissionGranted) "SMS: Active" else "SMS: Off", style = MaterialTheme.typography.labelSmall) },
+          selected = smsPermissionGranted && smsEnabled,
+          onClick = {
+            when {
+              !smsPermissionGranted -> smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS)
+              smsEnabled -> smsEnabled = false
+              else -> smsEnabled = true
+            }
+          },
+          label = { Text(if (smsPermissionGranted && smsEnabled) "SMS: Active" else "SMS: Off", style = MaterialTheme.typography.labelSmall) },
           leadingIcon = { Icon(Icons.Rounded.Sms, null, modifier = Modifier.size(14.dp)) },
         )
       }
@@ -974,16 +1015,6 @@ private fun ChatBubble(message: ChatMessageText, onDelete: () -> Unit) {
           modifier = (if (!isUser) Modifier.clickable { showMenu = true } else Modifier)
             .then(
               if (!isUser) Modifier
-                .blur(30.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                .background(
-                  Brush.verticalGradient(
-                    colors = listOf(
-                      Color.White.copy(alpha = 0.15f),
-                      Color.White.copy(alpha = 0.05f)
-                    )
-                  ),
-                  RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
-                )
                 .border(
                   width = 1.dp,
                   brush = Brush.verticalGradient(
@@ -1152,6 +1183,38 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
       return ParseResult.ClarificationNeeded(question)
     }
 
+    if (action == "get_health") {
+      val health = tools.getFinancialHealth()
+      val rev = (health["total_revenue"] as? Double) ?: 0.0
+      val cost = (health["total_cost"] as? Double) ?: 0.0
+      val profit = (health["net_profit"] as? Double) ?: 0.0
+      val count = (health["transaction_count"] as? Int) ?: 0
+      @Suppress("UNCHECKED_CAST")
+      val stockItems = health["stock_items"] as? List<Map<String, Any>> ?: emptyList()
+      val summary = if (count == 0) {
+        "No transactions recorded yet. Tell me what you sold or spent today to get started."
+      } else {
+        val profitLabel = if (profit >= 0) "Net profit" else "Net loss"
+        val lines = mutableListOf(
+          "$count transaction${if (count != 1) "s" else ""} today",
+          "Revenue: $defaultCurrency ${formatAmount(rev)}",
+          "Costs: $defaultCurrency ${formatAmount(cost)}",
+          "$profitLabel: $defaultCurrency ${formatAmount(Math.abs(profit))}",
+        )
+        if (stockItems.isNotEmpty()) {
+          val stockSummary = stockItems.take(5).joinToString(", ") { item ->
+            val qty = item["quantity"] as? Double ?: 0.0
+            val unit = item["unit"] as? String ?: ""
+            val name = item["item"] as? String ?: ""
+            "${fmtQty(qty)} $unit $name"
+          }
+          lines.add("Stock: $stockSummary")
+        }
+        lines.joinToString("  ·  ")
+      }
+      return ParseResult.Transactions(emptyList(), summary)
+    }
+
     val stockUpdatesArr = json.optJSONArray("stock_updates")
     val stockDeltaList: List<Triple<String, Double, String>> = buildList {
       if (stockUpdatesArr != null) {
@@ -1194,7 +1257,17 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
 
 private fun commitTransaction(tx: PendingTransaction, tools: LedgerTools) {
   tools.addTransaction(tx.item, tx.amount, tx.currency, tx.transactionType, tx.cost, tx.quantity, tx.unit, tx.confidence)
-  tx.stockDeltas.forEach { (item, delta, unit) -> tools.updateStock(item, delta, unit) }
+  // Fall back to the transaction's own qty/unit when the model omits stock_updates:
+  //   sale     → decrement stock (negative delta)
+  //   purchase/expense → increment stock (positive delta)
+  //   income   → no stock change (cash received, no physical goods)
+  val deltas = when {
+    tx.stockDeltas.isNotEmpty() -> tx.stockDeltas
+    tx.transactionType == "sale" -> listOf(Triple(tx.item, -tx.quantity, tx.unit))
+    tx.transactionType != "income" -> listOf(Triple(tx.item, tx.quantity, tx.unit))
+    else -> emptyList()
+  }
+  deltas.forEach { (item, delta, unit) -> tools.updateStock(item, delta, unit) }
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────

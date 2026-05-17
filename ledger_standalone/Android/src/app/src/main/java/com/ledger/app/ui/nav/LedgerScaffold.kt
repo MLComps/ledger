@@ -113,7 +113,7 @@ fun LedgerScaffold(
           HistoryScreen(ledgerTools = ledgerTools)
         }
         composable<InventoryRoute> {
-          InventoryScreen()
+          InventoryScreen(ledgerTools = ledgerTools, stateFlow = stateFlow)
         }
         composable<SettingsRoute> {
           SettingsScreen()

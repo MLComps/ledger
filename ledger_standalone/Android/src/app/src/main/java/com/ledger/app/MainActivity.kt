@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
           Surface(modifier = Modifier.fillMaxSize()) {
             val scope = rememberCoroutineScope()
             var selectedModel by remember { mutableStateOf<Model?>(null) }
-            val stateFlow = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+            val stateFlow = remember { MutableSharedFlow<Unit>(replay = 1) }
             val ledgerTools = remember {
               LedgerTools(
                 onStateChanged = { stateFlow.tryEmit(Unit) },

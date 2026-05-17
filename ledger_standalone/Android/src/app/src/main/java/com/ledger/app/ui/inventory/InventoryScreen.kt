@@ -48,15 +48,24 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.ledger.app.ui.ledger.LedgerViewModel
 import androidx.compose.animation.AnimatedVisibility
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.ledger.app.ui.ledger.LedgerTools
+import com.ledger.app.ui.ledger.LedgerViewModel
+import kotlinx.coroutines.flow.Flow
 
 private const val LOW_STOCK = 5.0
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InventoryScreen(viewModel: LedgerViewModel = hiltViewModel()) {
+fun InventoryScreen(
+  ledgerTools: LedgerTools,
+  stateFlow: Flow<Unit>,
+  viewModel: LedgerViewModel = hiltViewModel(),
+) {
+  LaunchedEffect(Unit) { viewModel.syncFromTools(ledgerTools) }
+  LaunchedEffect(Unit) { stateFlow.collect { viewModel.syncFromTools(ledgerTools) } }
+
   val uiState by viewModel.uiState.collectAsState()
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
