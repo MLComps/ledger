@@ -4,7 +4,7 @@ Full implementation plan for the Ledger standalone Android app, from scaffold to
 
 ---
 
-## Phase 6 — UI Modernization [ next ]
+## Phase 6 — UI Modernization [ in progress ]
 
 Goal: replace the utilitarian shell with a polished, production-quality app — multi-tab layout, Material You theming, financial-app UX patterns, smooth motion, and first-class dark mode.
 
@@ -19,48 +19,54 @@ Goal: replace the utilitarian shell with a polished, production-quality app — 
 | Accompanist permissions | `com.google.accompanist:accompanist-permissions` | `0.36.x` |
 
 ### 6a — Navigation & layout
-- [ ] Replace single-screen nav with a `NavigationBar` (bottom nav) with four tabs: **Home** (dashboard + chat), **History** (full transaction log), **Inventory**, **Settings**
-- [ ] Type-safe routes using `@Serializable` data objects — `androidx.navigation:navigation-compose:2.8+` with `kotlin.serialization`; no more string route literals
+- [x] Replace single-screen nav with a `NavigationBar` (bottom nav) with four tabs: **Home** (dashboard + chat), **History** (full transaction log), **Inventory**, **Settings**
+- [x] Type-safe routes using `@Serializable` data objects — `androidx.navigation:navigation-compose:2.8+` with `kotlin.serialization`; no more string route literals
 - [ ] Per-tab back stacks via nested nav graphs; `rememberSaveable` scroll state per tab
 - [ ] Collapsing `TopAppBar` on Home — `LargeTopAppBar` with `enterAlwaysScrollBehavior()` so it shrinks on scroll and snaps back on fling
-- [ ] Enable predictive back on API 35+ (already free with Navigation Compose 2.8); add `android:enableOnBackInvokedCallback="true"` to manifest
+- [ ] Enable predictive back on API 35+; add `android:enableOnBackInvokedCallback="true"` to manifest
 
 ### 6b — Design system & theming
-- [ ] Material You dynamic color — `dynamicDarkColorScheme(ctx)` / `dynamicLightColorScheme(ctx)` on API 31+; curated teal/indigo seed palette fallback for older devices
-- [ ] Full dark mode — `isSystemInDarkTheme()` branch in `LedgerTheme`; audit every hard-coded `Color(0xFF...)` constant in `LedgerScreen` and replace with M3 color roles (`MaterialTheme.colorScheme.error`, `tertiary`, etc.)
-- [ ] Apply `MaterialColors.harmonizeWithPrimary()` to the semantic profit-green / loss-red colours so they shift toward the user's wallpaper hue without clashing
-- [ ] Consistent type scale — `displaySmall` for dashboard totals, `titleMedium` for card headers, `bodySmall` for list rows, `labelSmall` for metadata
-- [ ] Icon audit — all icons already `Icons.Rounded`; verify no `Icons.Default` or `Icons.Filled` stragglers
-- [ ] `WindowCompat.setDecorFitsSystemWindows(false)` + `Modifier.systemBarsPadding()` for true edge-to-edge; remove Accompanist `SystemUiController` if still present
+- [x] Full dark mode — `isSystemInDarkTheme()` branch in `LedgerTheme`; dark and light colour schemes defined
+- [x] Custom M3 colour palette — deep forest teal-green seed colour; consistent across light and dark (palette swap by Gemini pending revert — deferred)
+- [x] Consistent type scale — `displaySmall` for dashboard totals, `titleMedium` for card headers, `bodySmall` for list rows, `labelSmall` for metadata
+- [ ] Revert `LedgerTheme.kt` to teal-green palette — Gemini swapped to neon lime / electric cyan which is misaligned with SME target market (deferred by user request)
+- [ ] Apply `MaterialColors.harmonizeWithPrimary()` to profit-green / loss-red so they shift toward the user's wallpaper hue
+- [ ] `WindowCompat.setDecorFitsSystemWindows(false)` + `Modifier.systemBarsPadding()` for true edge-to-edge
 
 ### 6c — Dashboard redesign (fintech style)
-- [ ] Hero balance card at the top: single `ElevatedCard` with subtle gradient (`Brush.linearGradient`) showing Net Profit in `displaySmall` typography; Revenue and Cost as secondary rows below
-- [ ] Animated count-up on numbers: `animateFloatAsState(targetValue, tween(800, FastOutSlowInEasing))` so amounts count up smoothly whenever they change
-- [ ] Privacy blur: upgrade current `••••` replacement to `Modifier.blur(12.dp)` (API 31+) with the `••••` fallback for API < 31; move `numbersHidden` to a `CompositionLocal` so it propagates into History tab without prop-drilling
-- [ ] Sparkline chart inside the hero card: `CartesianChartHost` from Vico with a `LineCartesianLayer` over the last 7 days of net profit — renders from Room data via a new `getDailyTotals()` DAO query
-- [ ] Transaction feed in History tab grouped by date: `stickyHeader {}` in `LazyColumn` with date section headers; `SwipeToDismissBox` (built-in M3) for swipe-delete with red background and trash icon revealed
-- [ ] Leading colour stripe on each transaction row: a 3 dp wide `Box` with green (`Color(0xFF2E7D32)`) for sale/income, red (`Color(0xFFC62828)`) for purchase/expense
-- [ ] Shimmer skeleton loading while Room data first loads: `Modifier.shimmer()` from compose-shimmer on placeholder rows
-- [ ] Model setup: segmented arc download progress — `Canvas` drawArc sweeping from 270° proportional to download progress, replacing the flat `LinearProgressIndicator`
+- [x] Hero balance card — `ElevatedCard` with gradient showing Net Profit, Revenue, and Cost
+- [x] Privacy mode as `CompositionLocal` — masks all amounts app-wide including History tab
+- [x] Animated splash screen — spring scale-in with `SensoryBackground`, 1200 ms display
+- [x] Contextual quick-action FAB on hero card — time-aware label (Quick Sale / Restock / Close Day)
+- [x] Day-close `RitualSummaryDialog` — revenue, profit, and transaction count summary with share action
+- [ ] Animated count-up on numbers — `animateFloatAsState(targetValue, tween(800, FastOutSlowInEasing))` so amounts count up smoothly on change
+- [ ] Sparkline chart inside the hero card — `CartesianChartHost` from Vico with a `LineCartesianLayer` over the last 7 days of net profit; new `getDailyTotals()` DAO query
+- [ ] Shimmer skeleton loading while Room data first loads — `Modifier.shimmer()` on placeholder rows
+- [ ] Model setup: segmented arc download progress — `Canvas` drawArc replacing the flat `LinearProgressIndicator`
 
 ### 6d — Chat inference UX
-- [ ] Streaming token display — as each token arrives (via a `SharedFlow<String>` from the inference coroutine), append to a `StringBuilder` in state and recompose; use `LazyColumn` with `reverseLayout = true` so new tokens appear at the bottom naturally
-- [ ] Typing / thinking indicator while model is running: three-dot pulse using `InfiniteTransition` with staggered `animateFloat` (0 ms / 160 ms / 320 ms delay on each dot), shown in the model's chat bubble slot
-- [ ] Per-message action row on long-press: **Copy** (`LocalClipboardManager`), **Retry** (re-sends last user message), **Delete** — appears as a `DropdownMenu` anchored to the bubble
-- [ ] Timestamps on every message: shown as `labelSmall` below each bubble; relative format ("just now", "2 min ago") using `DateUtils.getRelativeTimeSpanString`
-- [ ] Lottie success animation on transaction commit: a small (~48 dp) checkmark Lottie plays for 1.5 s over the chat area after a successful `add_transaction` — then auto-dismisses
-- [ ] Message input area: `OutlinedTextField` replaced by a custom pill-shaped container matching the chat bubble style; send button morphs to a stop/cancel button while processing (icon swap with `AnimatedContent`)
+- [x] Redesigned input bar — single attach button with contextual menu (image / WAV), full-width text field, Enter-to-send, animated mic↔send toggle
+- [x] Per-message long-press menu — Copy, Delete via `DropdownMenu`
+- [x] Human-readable agent messages — `message` field extracted from JSON response; raw JSON no longer shown in chat
+- [x] Quick-action suggestion chips — Sale, Expense, Stock, Summary pre-fill input
+- [ ] Streaming token display — tokens appended to `StringBuilder` via `SharedFlow<String>` as they arrive; `LazyColumn` with `reverseLayout = true`
+- [ ] Typing / thinking indicator — three-dot pulse with staggered `InfiniteTransition` while model is running
+- [ ] Timestamps on every message — `labelSmall` below each bubble; relative format via `DateUtils.getRelativeTimeSpanString`
+- [ ] Lottie success animation on transaction commit — ~48 dp checkmark plays for 1.5 s then auto-dismisses
+- [ ] Send button morphs to stop/cancel while processing — icon swap with `AnimatedContent`
 
 ### 6e — Motion & onboarding
-- [ ] Screen transitions: `slideInHorizontally + fadeIn` / `slideOutHorizontally + fadeOut` wired into `NavHost`'s `enterTransition`/`exitTransition`
-- [ ] Staggered list entry: items in transaction feed fade+translateY(20dp→0) with `tween(200)` and a 30 ms per-index offset using `LaunchedEffect(index)`
-- [ ] Onboarding illustrations: replace static `Icons.Rounded` placeholders with Lottie files (finance/accounting themed — free ones at lottiefiles.com); auto-play on each page, loop=false
-- [ ] Haptic feedback: `HapticFeedbackType.LongPress` on transaction commit; `HapticFeedbackType.TextHandleMove` on swipe-delete confirmation
+- [x] Onboarding walkthrough — 4-page first-launch guide with slide+fade transitions
+- [x] Staggered model card entry animations — `fadeIn + slideInVertically` with per-index delay in `ModelSetupScreen`
+- [x] Haptic feedback — sale clink, expense thud, interaction tick via `HapticManager`
+- [ ] Screen transitions — `slideInHorizontally + fadeIn` / `slideOutHorizontally + fadeOut` in `NavHost` `enterTransition`/`exitTransition`
+- [ ] Staggered transaction list entry — `tween(200)` with 30 ms per-index offset
+- [ ] Onboarding illustrations — replace `Icons.Rounded` placeholders with Lottie files; auto-play, loop=false
 
 ### 6f — Performance
-- [ ] Baseline Profile: add `androidx.benchmark:benchmark-macro-junit4` test that walks app open → dashboard → chat send; run `./gradlew generateBaselineProfile`; commit generated `baseline-prof.txt`
-- [ ] Enable Compose compiler reports (`reportsDestination`) in debug builds; audit any unstable/non-skippable composables and wrap `List<T>` in `@Immutable` data wrappers
-- [ ] Replace all `runBlocking` in `DataStoreRepository` with proper `suspend` functions (use `Flow.first()` in calling coroutine instead); this removes IO blocking on the main thread
+- [ ] Replace all `runBlocking` in `DataStoreRepository` with proper `suspend` functions — removes IO blocking on the main thread
+- [ ] Baseline Profile — `benchmark-macro-junit4` test walking app open → dashboard → chat send; commit generated `baseline-prof.txt`
+- [ ] Enable Compose compiler reports in debug builds; audit unstable composables; wrap `List<T>` in `@Immutable` data wrappers
 
 ---
 
@@ -74,16 +80,16 @@ Goal: close the gap between what the user says and what gets written to the data
 - [ ] Prompt iteration loop: target ≥ 90 % record accuracy before shipping; document which failure modes required rule changes
 
 ### 7b — Multi-turn clarification flow
-- [ ] Extend JSON schema with `"action": "clarify"` and `"question": "<one sentence>"` — model emits this when a critical field (amount or transaction direction) is truly ambiguous; it must NOT clarify when it can make a reasonable `confidence="medium"` guess
-- [ ] In `parseResponse`: if `action == "clarify"`, extract `question`, render it as an agent chat bubble with a distinct `⚠` icon, and set a `clarificationPending = true` flag — no DB write, no confirmation dialog
-- [ ] While `clarificationPending`, the next user message is treated as a continuation of the clarification context; the model re-processes with the prior partial context prepended
+- [ ] Extend JSON schema with `"action": "clarify"` and `"question": "<one sentence>"` — model emits this when a critical field (amount or transaction direction) is truly ambiguous; must NOT clarify when a reasonable `confidence="medium"` guess is possible
+- [ ] In `parseResponse`: if `action == "clarify"`, extract `question`, render as agent bubble with a distinct `⚠` icon, set `clarificationPending = true` — no DB write, no confirmation dialog
+- [ ] While `clarificationPending`, the next user message continues the clarification context; model re-processes with prior partial context prepended
 - [ ] **Skip button** on the clarification bubble — dismisses pending entry without replying; resets `clarificationPending`
-- [ ] System prompt rule additions: clarify when amount is missing entirely or direction is genuinely ambiguous; guess+`confidence="low"` when amount exists but item name is unclear; never clarify for stock-only updates
+- [ ] System prompt rule additions: clarify when amount is missing entirely or direction is genuinely ambiguous; guess + `confidence="low"` when amount exists but item name is unclear; never clarify for stock-only updates
 
 ### 7c — Dashboard accuracy audit
-- [ ] Debug overlay (debug builds only): floating `ElevatedCard` toggled by a triple-tap on the dashboard that shows the raw JSON from the last inference, field diff against what was committed, and per-field confidence — makes testing prompt changes fast without logcat
-- [ ] Audit `LedgerViewModel.syncFromTools` revenue/cost/profit formula against all four transaction types plus mixed-batch inputs; add inline assertions (`check(...)`) for impossible states (negative revenue from sales, etc.)
-- [ ] Verify Room migration 1→2 (confidence column) runs cleanly on a fresh install, an upgrade from v1, and after a `clearTransactions()` call
+- [ ] Debug overlay (debug builds only) — floating `ElevatedCard` toggled by triple-tap on dashboard; shows raw JSON from last inference, field diff against what was committed, per-field confidence
+- [ ] Audit `LedgerViewModel.syncFromTools` revenue/cost/profit formula against all four transaction types plus mixed-batch inputs; add `check(...)` assertions for impossible states
+- [ ] Verify Room migration 1→2 (confidence column) runs cleanly on fresh install, upgrade from v1, and after `clearTransactions()`
 
 ---
 
@@ -142,7 +148,6 @@ Goal: clean, shippable builds with proper secrets management and GitHub releases
 - [x] ABI splits — `arm64-v8a` (devices) and `x86_64` (emulator), no universal APK
 - [x] R8 minification + resource shrinking for release builds (~66% smaller than debug)
 - [x] `proguard-rules.pro` — keep rules for LiteRT, Room, Hilt, Moshi, WorkManager
-- [x] `local.properties` secrets — `HF_TOKEN` injected as `BuildConfig` field at build time
 - [x] Remove AppAuth dead dependency
 - [x] Resume + retry downloads — `PARTIALLY_DOWNLOADED` UI branch with Resume/Discard; FAILED shows error + Retry; IN_PROGRESS shows speed and ETA
 - [x] `.gitignore` — excludes `.gradle/`, `build/`, `*.apk`, `.venv/`, `scripts/models/`, large test assets
@@ -156,28 +161,27 @@ Goal: clean, shippable builds with proper secrets management and GitHub releases
 ### 5a — UX polish (complete)
 - [x] Currency and locale selection — DataStore-persisted currency picker (11 currencies); propagates to dashboard, TTS, PDF, CSV; system prompt updated dynamically
 - [x] Onboarding walkthrough on first launch — 4-page `ModalBottomSheet` (Welcome, Voice/Type, SMS, Photo); slide+fade transitions; `hasSeenOnboarding` flag in DataStore
-- [x] Empty-state illustrations for dashboard — faded receipt icon + hint icons (Voice/Photo/SMS) when ledger is empty; inline empty message in Transaction section
+- [x] Empty-state illustrations for dashboard — faded receipt icon + hint icons (Voice/Photo/SMS) when ledger is empty
 
 ### 5b — Features (complete)
 - [x] CSV export alongside PDF — `LedgerCsvExporter` produces UTF-8 CSV (Transactions, Summary, Inventory sections); grid icon button added to dashboard header
-- [x] Remove `HF_TOKEN` — `litert-community` models are publicly hosted; no account or token required; removed from `BuildConfig`, `DownloadRepository`, and `local.properties.example`
+- [x] Remove `HF_TOKEN` — `litert-community` models are publicly hosted; no account or token required
 
 ### 5c — Quality (complete)
-- [x] Remove dead Moshi dependency — `moshi-kotlin` and `moshi-kotlin-codegen` were unused (project uses `org.json.JSONObject`); eliminates kapt deprecation warning
-- [x] Remove `-Xcontext-receivers` compiler flag — no context receiver syntax in codebase; build is now warning-clean
+- [x] Remove dead Moshi dependency — eliminates kapt deprecation warning
+- [x] Remove `-Xcontext-receivers` compiler flag — build is now warning-clean
 
 ---
 
-## Phase 6g — Gemini UI integration cleanup [ complete ]
+## Phase 6g — Gemini UI integration cleanup (complete)
 
 Fixes to Gemini's UI/UX additions before continuing the build plan.
 
-- [x] Remove duplicate `HapticManager` instantiation — `LedgerMainScreen` had a dead `hapticManager` allocation; only `LedgerMainUi` needs it
-- [x] Throttle `SensoryBackground` animation — tween cycle increased from 12 s to 24 s to halve canvas redraws and reduce battery drain on mid-range devices
-- [x] Fix time-based contextual FAB — `remember {}` without a key would lock the label at first-compose time; changed to `remember(currentHour)` so it recomputes when the hour changes
-- [x] Trim splash screen delay — 2500 ms forced wait reduced to 1200 ms
-- [x] Restore explicit imports in `LedgerScreen.kt` — replaced Gemini's wildcard star imports (`animation.*`, `material3.*`, `runtime.*`, `layout.*`, `rounded.*`, `graphics.*`) with named imports matching the rest of the codebase
-- [ ] Revert `LedgerTheme.kt` color palette — "Modern Air" / "Deep Obsidian" (black + neon lime + electric cyan) is misaligned with the SME target market; restore forest teal-green M3 palette (deferred by user request)
+- [x] Remove duplicate `HapticManager` instantiation — dead allocation in `LedgerMainScreen` removed
+- [x] Throttle `SensoryBackground` animation — tween cycle 12 s → 24 s; halves canvas redraws on mid-range devices
+- [x] Fix time-based contextual FAB — `remember {}` → `remember(currentHour)` so label recomputes when hour changes
+- [x] Trim splash screen delay — 2500 ms → 1200 ms
+- [x] Restore explicit imports in `LedgerScreen.kt` — replaced Gemini's six wildcard star imports with named imports
 
 ---
 
