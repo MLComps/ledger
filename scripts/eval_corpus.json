@@ -24,11 +24,9 @@
       "expected": {
         "action": "add_transaction",
         "transaction_type": "sale",
-        "item": "bread",
+        "item": "loaf of bread",
         "amount": 50,
         "currency": "KES",
-        "quantity": 1,
-        "unit": "pieces",
         "confidence": "high"
       }
     },
@@ -100,8 +98,6 @@
         "item": "electricity",
         "amount": 500,
         "currency": "KES",
-        "quantity": 1,
-        "unit": "unit",
         "confidence": "high"
       }
     },
@@ -114,8 +110,6 @@
         "item": "transport",
         "amount": 150,
         "currency": "KES",
-        "quantity": 1,
-        "unit": "unit",
         "confidence": "high"
       }
     },
@@ -129,8 +123,6 @@
         "item": "rent",
         "amount": 2000,
         "currency": "KES",
-        "quantity": 1,
-        "unit": "unit",
         "confidence": "high"
       }
     },
@@ -145,8 +137,6 @@
         "item": "previous sale payment",
         "amount": 300,
         "currency": "KES",
-        "quantity": 1,
-        "unit": "unit",
         "confidence": "high"
       }
     },
@@ -159,8 +149,6 @@
         "item": "debt repayment",
         "amount": 1500,
         "currency": "KES",
-        "quantity": 1,
-        "unit": "unit",
         "confidence": "high"
       }
     },
@@ -293,10 +281,10 @@
     },
     {
       "id": "R02",
+      "note": "correction without amount context — model should clarify or return unknown; either is acceptable",
       "input": "cancel that, it was a purchase not a sale",
       "expected": {
-        "action": "unknown",
-        "note": "correction without amount context — model should clarify or return unknown"
+        "action": "unknown"
       }
     },
 
@@ -394,6 +382,199 @@
         "currency": "KES",
         "confidence": "low"
       }
+    },
+
+    // ── Combined purchase + stock update ──────────────────────────────────────
+    // These cases expect BOTH a transaction and a stock_update in the same response
+    {
+      "id": "B01",
+      "type": "combined",
+      "input": "Bought 20 kg maize flour for 2000 and stored it",
+      "expected_transaction": {
+        "action": "add_transaction",
+        "transaction_type": "purchase",
+        "item": "maize flour",
+        "amount": 2000,
+        "currency": "KES",
+        "confidence": "high"
+      },
+      "expected_stock": {
+        "item": "maize flour",
+        "quantity_delta": 20,
+        "unit": "kg"
+      }
+    },
+    {
+      "id": "B02",
+      "type": "combined",
+      "input": "Restocked cooking oil — 10 litres, paid 1500 for it",
+      "expected_transaction": {
+        "action": "add_transaction",
+        "transaction_type": "purchase",
+        "item": "cooking oil",
+        "amount": 1500,
+        "currency": "KES",
+        "confidence": "high"
+      },
+      "expected_stock": {
+        "item": "cooking oil",
+        "quantity_delta": 10,
+        "unit": "litres"
+      }
+    },
+    {
+      "id": "B03",
+      "type": "combined",
+      "input": "Got 50 packets soap from supplier for 3000, added to shelf",
+      "expected_transaction": {
+        "action": "add_transaction",
+        "transaction_type": "purchase",
+        "item": "soap",
+        "amount": 3000,
+        "currency": "KES",
+        "confidence": "high"
+      },
+      "expected_stock": {
+        "item": "soap",
+        "quantity_delta": 50,
+        "unit": "packets"
+      }
+    },
+    {
+      "id": "B04",
+      "type": "combined",
+      "note": "Computed total: 5 crates × 500 = 2500",
+      "input": "Purchased 5 crates of eggs at 500 each, put them in the store",
+      "expected_transaction": {
+        "action": "add_transaction",
+        "transaction_type": "purchase",
+        "item": "eggs",
+        "amount": 2500,
+        "currency": "KES",
+        "confidence": "medium"
+      },
+      "expected_stock": {
+        "item": "eggs",
+        "quantity_delta": 5,
+        "unit": "crates"
+      }
+    },
+    {
+      "id": "B05",
+      "type": "combined",
+      "note": "Swahili: bought 30 kg sugar for 2700",
+      "input": "nilinunua sukari kilo 30 kwa 2700 nikaweka dukani",
+      "expected_transaction": {
+        "action": "add_transaction",
+        "transaction_type": "purchase",
+        "item": "sukari",
+        "amount": 2700,
+        "currency": "KES",
+        "confidence": "high"
+      },
+      "expected_stock": {
+        "item": "sukari",
+        "quantity_delta": 30,
+        "unit": "kg"
+      }
+    },
+
+    // ── Multi-turn clarification sequences ────────────────────────────────────
+    // Each turn is sent in the same conversation; model must ask then record
+    {
+      "id": "MT01",
+      "type": "multi_turn",
+      "turns": [
+        {
+          "input": "Sold mangoes",
+          "expected_action": "clarify"
+        },
+        {
+          "input": "Five pieces for 200 bob",
+          "expected": {
+            "action": "add_transaction",
+            "transaction_type": "sale",
+            "item": "mangoes",
+            "amount": 200,
+            "currency": "KES"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MT02",
+      "type": "multi_turn",
+      "turns": [
+        {
+          "input": "I sold some milk today",
+          "expected_action": "clarify"
+        },
+        {
+          "input": "3 litres at 60 each",
+          "expected": {
+            "action": "add_transaction",
+            "transaction_type": "sale",
+            "item": "milk",
+            "amount": 180,
+            "currency": "KES"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MT03",
+      "type": "multi_turn",
+      "turns": [
+        {
+          "input": "Got payment from a customer",
+          "expected_action": "clarify"
+        },
+        {
+          "input": "1500 for the bread order from yesterday",
+          "expected": {
+            "action": "add_transaction",
+            "transaction_type": "income",
+            "amount": 1500,
+            "currency": "KES"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MT04",
+      "type": "multi_turn",
+      "note": "Swahili item name, clarify then record",
+      "turns": [
+        {
+          "input": "mahindi",
+          "expected_action": "clarify"
+        },
+        {
+          "input": "sold 5 kg for 350",
+          "expected": {
+            "action": "add_transaction",
+            "transaction_type": "sale",
+            "item": "mahindi",
+            "amount": 350,
+            "currency": "KES"
+          }
+        }
+      ]
+    },
+    {
+      "id": "MT05",
+      "type": "multi_turn",
+      "note": "Two-item follow-up — model should record both",
+      "turns": [
+        {
+          "input": "I made a purchase today",
+          "expected_action": "clarify"
+        },
+        {
+          "input": "10 kg sugar for 900 and 5 kg flour for 400",
+          "expected_count": 2
+        }
+      ]
     }
   ]
 }

@@ -67,11 +67,12 @@ Rules:
 - transaction_type="sale" or "income" when the vendor RECEIVES money; "purchase" or "expense" when the vendor PAYS money
 - For "paid 500 for previous sale", "customer paid", "received payment", "someone paid me" → transaction_type="income"
 - For M-Pesa confirmations: "Ksh X received from NAME" → transaction_type="income", item="M-Pesa payment", currency="KES"; "Ksh X sent to NAME" → transaction_type="expense"
+- When a purchase involves adding goods to inventory for resale, include BOTH a transactions entry (transaction_type="purchase") AND a stock_updates entry in the same response
 - item: if the user says vague words like "stuff", "things", "something", "that thing" use item="goods"
-- confidence levels — read carefully:
-  - "high": item name is specific AND amount is a directly stated number (e.g. "sold tomatoes for 80", "bought rice for 1200 KES") — currency defaulting is fine and does NOT reduce confidence
-  - "medium": amount was computed from unit price × quantity (e.g. "3 packets at 30 each" → 90), OR amount is approximate/hedged ("about three fifty", "around 200"), OR input is a correction ("actually it was X"), OR item is a generic category word like "goods" or "stuff" (i.e. recognisably a category, just not specific)
-  - "low": item is a pronoun or completely opaque placeholder with NO category information — e.g. "that thing", "something", "it", "this" — you have no idea what was transacted
+- confidence levels — these are strict rules, not guidelines:
+  - "high": item name is clearly specific (tomatoes, rice, bread, rent, electricity) AND the amount is a number directly spoken/written by the user — currency defaulting is fine and does NOT reduce confidence
+  - "medium": EITHER the total amount was calculated by you (e.g. "3 at 30 each" → you computed 90), OR the amount is hedged/approximate ("about three fifty", "around 200"), OR the input is a correction ("actually it was X not Y"), OR the item is a category placeholder like "goods" or "stuff" — if ANY of these apply, confidence MUST be "medium" even if the item is known
+  - "low": the item has no meaningful name at all — user said "that thing", "something", "it", or a bare pronoun with zero category hint; the item field will be "goods" but you have no idea what was transacted
 - Output a single JSON object. Start your response with {{ and end with }}. No other text."""
 
 
