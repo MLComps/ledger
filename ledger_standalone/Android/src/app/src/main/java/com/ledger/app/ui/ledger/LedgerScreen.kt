@@ -183,14 +183,21 @@ Rules:
 - action="update_stock" for restocking or stock level changes
 - action="get_health" when asked for totals, summary, or financial health
 - action="unknown" if no financial action is found
-- action="clarify" ONLY when the amount is completely absent AND cannot be inferred from context, OR when the direction (receiving vs paying money) is genuinely ambiguous with no context clues; do NOT clarify for unclear item names — use confidence="low" instead; do NOT clarify for stock-only updates
+- action="clarify" ONLY when the amount is completely absent AND cannot be inferred from any context; do NOT clarify for unclear item names — use confidence="low" instead; do NOT clarify for stock-only updates; do NOT clarify when the direction is clear from words like "sold", "bought", "paid", "received", "someone paid me", "customer bought"
+- If the amount IS present and the direction IS clear, ALWAYS record the transaction even if the item name is vague (use item="goods") — never clarify in this case
+- Corrections like "actually it was X not Y" always resolve to action="add_transaction" with the corrected amount; never clarify corrections when an amount is stated
 - When action="clarify": transactions and stock_updates must be empty arrays; include a "question" field with one short question; omit the "message" field
 - transactions and stock_updates may be empty arrays []
-- currency defaults to $currency if not mentioned
+- currency defaults to $currency if not mentioned; always output the 3-letter ISO code (e.g. KES not KSH)
 - cost defaults to 0 if not mentioned
 - transaction_type="sale" or "income" when the vendor RECEIVES money; "purchase" or "expense" when the vendor PAYS money
-- For "paid 500 for previous sale", "customer paid", "received payment" → transaction_type="income"
-- confidence="high" when all details are explicit; "medium" when most details are clear but some were inferred; "low" when the transaction is ambiguous or key details were guessed
+- For "paid 500 for previous sale", "customer paid", "received payment", "someone paid me" → transaction_type="income"
+- For M-Pesa confirmations: "Ksh X received from NAME" → transaction_type="income", item="M-Pesa payment", currency="KES"; "Ksh X sent to NAME" → transaction_type="expense"
+- item: if the user says vague words like "stuff", "things", "something", "that thing" use item="goods"
+- confidence levels:
+  - "high": item name is specific AND amount is a directly stated number — currency defaulting is fine and does NOT reduce confidence
+  - "medium": amount was computed from unit price × quantity, OR amount is approximate ("about X", "around X"), OR input is a correction ("actually it was X"), OR item is a generic category word like "goods" or "stuff"
+  - "low": item is a pronoun or completely opaque placeholder with no category — e.g. "that thing", "something", "it"
 - Output a single JSON object. Start your response with { and end with }. No other text."""
 
 // ── Entry point ───────────────────────────────────────────────────────────────
