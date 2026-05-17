@@ -441,6 +441,7 @@ constructor(
               Contents.of(listOf(Content.AudioBytes(wavBytes)))
             )
             onDone(responseMessage.toString())
+            checkAutoReset()
           } catch (e: Exception) {
             Log.e(TAG, "WAV file inference failed", e)
             onError(e.message ?: context.getString(R.string.unknown_error))
@@ -544,15 +545,6 @@ constructor(
   fun deleteTransaction(timestampMs: Long, tools: LedgerTools) {
     tools.deleteTransaction(timestampMs)
     syncFromTools(tools)
-  }
-
-  fun deleteTransactionById(timestampMs: Long) {
-    viewModelScope.launch(Dispatchers.IO) {
-      ledgerRepository.deleteByTimestamp(timestampMs)
-    }
-    _uiState.update { state ->
-      state.copy(recentTransactions = state.recentTransactions.filter { it.timestampMs != timestampMs })
-    }
   }
 
   fun addMessage(message: ChatMessage) {

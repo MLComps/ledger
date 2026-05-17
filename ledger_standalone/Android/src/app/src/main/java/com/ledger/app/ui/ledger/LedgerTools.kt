@@ -7,6 +7,8 @@ import com.google.ai.edge.litertlm.ToolParam
 import com.google.ai.edge.litertlm.ToolSet
 import java.util.Collections
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val TAG = "LedgerTools"
@@ -32,6 +34,33 @@ class LedgerTools(
 ) : ToolSet {
   val entries: MutableList<LedgerEntry> = Collections.synchronizedList(mutableListOf())
   val stock: MutableMap<String, LedgerStockItem> = Collections.synchronizedMap(mutableMapOf())
+
+  init {
+    coroutineScope?.launch(Dispatchers.IO) {
+      try {
+        ledgerRepository?.transactions?.first()?.let { txns ->
+          val existingTimestamps = synchronized(entries) { entries.map { it.timestampMs }.toHashSet() }
+          val toAdd = txns
+            .filter { it.timestampMs !in existingTimestamps }
+            .map { e ->
+              LedgerEntry(
+                item = e.item, amount = e.amount, currency = e.currency,
+                transactionType = e.transactionType, cost = e.cost,
+                quantity = e.quantity, unit = e.unit,
+                confidence = e.confidence, timestampMs = e.timestampMs,
+              )
+            }
+          entries.addAll(toAdd)
+        }
+        ledgerRepository?.stock?.first()?.let { stockEntities ->
+          stockEntities.forEach { e -> stock[e.item] = LedgerStockItem(e.quantity, e.unit) }
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "Failed to preload from repository: ${e.message}")
+      }
+      onStateChanged()
+    }
+  }
 
   @Tool(description = "Record a sale, purchase, income, or expense in the ledger.")
   fun addTransaction(

@@ -1092,6 +1092,8 @@ data class PendingTransaction(
   val unit: String,
   val confidence: String,
   val timestampMs: Long = System.currentTimeMillis(),
+  // Stock deltas attached to this transaction — applied only when transaction is committed
+  val stockDeltas: List<Triple<String, Double, String>> = emptyList(),
 )
 
 @Composable
@@ -1150,17 +1152,24 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
       return ParseResult.ClarificationNeeded(question)
     }
 
-    val stockUpdates = json.optJSONArray("stock_updates")
-    if (stockUpdates != null) {
-      for (i in 0 until stockUpdates.length()) {
-        val upd = stockUpdates.getJSONObject(i)
-        tools.updateStock(upd.optString("item", "item"), upd.optDouble("quantity_delta", 0.0), upd.optString("unit", "unit"))
+    val stockUpdatesArr = json.optJSONArray("stock_updates")
+    val stockDeltaList: List<Triple<String, Double, String>> = buildList {
+      if (stockUpdatesArr != null) {
+        for (i in 0 until stockUpdatesArr.length()) {
+          val upd = stockUpdatesArr.getJSONObject(i)
+          add(Triple(upd.optString("item", "item"), upd.optDouble("quantity_delta", 0.0), upd.optString("unit", "unit")))
+        }
       }
+    }
+    // For pure stock actions, apply immediately. For add_transaction, defer to commitTransaction
+    // so that stock is only updated if the user actually confirms the transaction.
+    if (action != "add_transaction") {
+      stockDeltaList.forEach { (item, delta, unit) -> tools.updateStock(item, delta, unit) }
     }
     val message = json.optString("message", "Done.")
     val transactions = json.optJSONArray("transactions")
     val list = if (action == "add_transaction" && transactions != null)
-      (0 until transactions.length()).map { i ->
+      (0 until transactions.length()).mapIndexed { i, _ ->
         val tx = transactions.getJSONObject(i)
         PendingTransaction(
           item = tx.optString("item", "item"),
@@ -1171,6 +1180,8 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
           quantity = tx.optDouble("quantity", 1.0),
           unit = tx.optString("unit", "unit"),
           confidence = tx.optString("confidence", "high"),
+          // Attach stock deltas to first transaction only; combined responses have one tx per stock update
+          stockDeltas = if (i == 0) stockDeltaList else emptyList(),
         )
       }
     else emptyList()
@@ -1183,6 +1194,7 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
 
 private fun commitTransaction(tx: PendingTransaction, tools: LedgerTools) {
   tools.addTransaction(tx.item, tx.amount, tx.currency, tx.transactionType, tx.cost, tx.quantity, tx.unit, tx.confidence)
+  tx.stockDeltas.forEach { (item, delta, unit) -> tools.updateStock(item, delta, unit) }
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────

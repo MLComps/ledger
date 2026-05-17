@@ -122,7 +122,7 @@ fun HistoryScreen(
               SwipeableTransactionRow(
                 tx = tx,
                 privacyMode = privacyMode,
-                onDelete = { viewModel.deleteTransactionById(tx.timestampMs) },
+                onDelete = { viewModel.deleteTransaction(tx.timestampMs, ledgerTools) },
               )
             }
           }
