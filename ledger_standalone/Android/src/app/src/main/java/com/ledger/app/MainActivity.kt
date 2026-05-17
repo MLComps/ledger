@@ -53,34 +53,40 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       LedgerTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-          val scope = rememberCoroutineScope()
-          var selectedModel by remember { mutableStateOf<Model?>(null) }
-          val stateFlow = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
-          val ledgerTools = remember {
-            LedgerTools(
-              onStateChanged = { stateFlow.tryEmit(Unit) },
-              ledgerRepository = ledgerRepository,
-              coroutineScope = scope,
-            )
-          }
+        var showSplash by remember { mutableStateOf(true) }
+        
+        if (showSplash) {
+          com.ledger.app.ui.common.LedgerSplashScreen(onAnimationFinished = { showSplash = false })
+        } else {
+          Surface(modifier = Modifier.fillMaxSize()) {
+            val scope = rememberCoroutineScope()
+            var selectedModel by remember { mutableStateOf<Model?>(null) }
+            val stateFlow = remember { MutableSharedFlow<Unit>(extraBufferCapacity = 1) }
+            val ledgerTools = remember {
+              LedgerTools(
+                onStateChanged = { stateFlow.tryEmit(Unit) },
+                ledgerRepository = ledgerRepository,
+                coroutineScope = scope,
+              )
+            }
 
-          if (selectedModel == null) {
-            ModelSetupScreen(
-              onModelReady = { model -> selectedModel = model }
-            )
-          } else {
-            LedgerScaffold(
-              model = selectedModel!!,
-              stateFlow = stateFlow,
-              ledgerTools = ledgerTools,
-            )
-          }
+            if (selectedModel == null) {
+              ModelSetupScreen(
+                onModelReady = { model -> selectedModel = model }
+              )
+            } else {
+              LedgerScaffold(
+                model = selectedModel!!,
+                stateFlow = stateFlow,
+                ledgerTools = ledgerTools,
+              )
+            }
 
-          val onboardingVm: OnboardingViewModel = hiltViewModel()
-          val hasSeenOnboarding by onboardingVm.hasSeenOnboarding.collectAsState()
-          if (hasSeenOnboarding == false) {
-            OnboardingSheet(onDismiss = { onboardingVm.markSeen() })
+            val onboardingVm: OnboardingViewModel = hiltViewModel()
+            val hasSeenOnboarding by onboardingVm.hasSeenOnboarding.collectAsState()
+            if (hasSeenOnboarding == false) {
+              OnboardingSheet(onDismiss = { onboardingVm.markSeen() })
+            }
           }
         }
       }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -32,6 +33,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.ledger.app.common.HapticManager
 import com.ledger.app.data.Model
 import com.ledger.app.ui.history.HistoryScreen
 import com.ledger.app.ui.inventory.InventoryScreen
@@ -40,6 +42,7 @@ import com.ledger.app.ui.ledger.LedgerTools
 import com.ledger.app.ui.settings.SettingsScreen
 import com.ledger.app.ui.theme.LocalPrivacyMode
 import kotlinx.coroutines.flow.Flow
+import java.util.Calendar
 
 private data class NavItem(
   val route: Any,
@@ -64,6 +67,7 @@ fun LedgerScaffold(
   val navController = rememberNavController()
   val navBackStack by navController.currentBackStackEntryAsState()
   val privacyMode = remember { mutableStateOf(false) }
+  val context = androidx.compose.ui.platform.LocalContext.current
 
   CompositionLocalProvider(LocalPrivacyMode provides privacyMode) {
     Scaffold(

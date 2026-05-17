@@ -2,33 +2,19 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:viewportWidth="24"
+    android:viewportHeight="24">
 
-  <!-- Bold "L" letterform — vertical stroke + horizontal stroke -->
-  <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M32,22 L44,22 L44,76 L78,76 L78,88 L32,88 Z" />
-
-  <!-- Three ledger lines filling the counter of the L -->
-  <!-- Each line is a rounded-end rectangle representing a journal entry -->
-  <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M50,34 Q51,34 51,35 L51,39 Q51,40 50,40 L76,40 Q77,40 77,39 L77,35 Q77,34 76,34 Z" />
-  <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M50,46 L76,46 L76,50 L50,50 Z" />
-  <path
-      android:fillColor="#FFFFFFFF"
-      android:pathData="M50,58 L68,58 L68,62 L50,62 Z" />
-
-  <!-- Small upward-trending spark in bottom-right corner of counter -->
-  <path
-      android:strokeColor="#FFFFFFFF"
-      android:strokeWidth="3"
-      android:strokeLineCap="round"
-      android:strokeLineJoin="round"
-      android:fillColor="@android:color/transparent"
-      android:pathData="M66,70 L70,64 L74,68 L78,60" />
+    <!-- Hero Element: The Trending Up Arrow (Cyber Lime) -->
+    <!-- Centered and scaled for maximum brand impact without circles -->
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:scaleX="0.7"
+        android:scaleY="0.7">
+        <path
+            android:fillColor="#A4FF00"
+            android:pathData="M21,7L21,11C21,11.55 20.55,12 20,12C19.45,12 19,11.55 19,11L19,8.41L14.71,12.7C14.32,13.09 13.68,13.09 13.29,12.7L9.29,8.71L3.71,14.29C3.32,14.68 2.68,14.68 2.29,14.29C1.9,13.9 1.9,13.26 2.29,12.87L8.58,6.58C8.97,6.19 9.61,6.19 10,6.58L14,10.58L17.58,6.58L15,6.58C14.45,6.58 14,6.13 14,5.58C14,5.03 14.45,4.58 15,4.58L20,4.58C20.55,4.58 21,5.03 21,5.58V7Z" />
+    </group>
 
 </vector>
