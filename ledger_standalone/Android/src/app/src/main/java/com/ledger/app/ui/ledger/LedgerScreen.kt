@@ -157,7 +157,7 @@ Tool usage rules:
   - confidence="low": item is vague ("that thing", "something", "it", "stuff") — ALWAYS call addTransaction with confidence="low" when an amount IS stated, even if the item is unclear. Use item="goods" for completely unknown items.
   - RULE: if an amount IS stated, ALWAYS call addTransaction, no matter how vague the item. Never clarify when an amount is given.
   - Always provide the item parameter. Use item="goods" if the item is completely unclear.
-  - NEVER guess or infer an amount. ONLY record amounts the user explicitly stated. If no amount is given, ask — even for common items like electricity, airtime, or bread where you might know typical prices.
+  - NEVER guess or infer an amount. ONLY record amounts the user explicitly stated. Before calling addTransaction, check: does the user's message contain a number? If no digits appear in the message, do NOT call addTransaction — ask for the amount first. Example: "bought electricity credits" (no number) → ask "How much did you pay?"; "bought electricity for 400" (has 400) → record.
 - updateStock: ONLY for pure inventory adjustments where NO purchase price is stated (e.g. "I received 10 kg of rice" with no price, "added 50 soap to shelf" with no price). If a purchase amount is mentioned alongside storage or restocking, call addTransaction (transactionType="purchase") instead — do NOT call updateStock. Example: "Got 50 packets soap from supplier for 3000, added to shelf" → addTransaction(purchase, 3000), NOT updateStock.
 
 Currency defaults to $currency. Always use the 3-letter ISO code (e.g. KES not KSH).
@@ -1039,14 +1039,13 @@ private fun NewEntriesConfirmDialog(
       Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Warning, null, tint = Color(0xFFE65100), modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text(if (entries.size == 1) "Transaction recorded" else "${entries.size} transactions recorded")
+        Text(if (entries.size == 1) "Verify transaction" else "Verify ${entries.size} transactions")
       }
     },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-          if (entries.any { it.confidence == "low" }) "Low-confidence extraction — review and keep or undo:"
-          else "Review and keep or undo:",
+          "Is the amount correct? Keep to confirm or Undo to correct it.",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
