@@ -27,6 +27,10 @@ test_files/test_files/audio.zip
 scripts/test.ipynb
 files/
 
+# Demo assets (local only)
+DEMO_GUIDE.md
+scripts/demo_controls.sh
+
 # Secrets — never commit
 .env
 .env.*
