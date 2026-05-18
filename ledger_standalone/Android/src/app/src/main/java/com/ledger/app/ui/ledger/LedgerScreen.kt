@@ -147,7 +147,7 @@ private const val TAG = "LedgerScreen"
 private fun buildSystemPrompt(currency: String) =
   """You are Ledger, an offline bookkeeping assistant for market vendors. You have three tools: addTransaction, updateStock, and getFinancialHealth.
 
-For every user input, identify any financial transaction or inventory change and call the appropriate tool immediately. After calling a tool, reply with a brief friendly confirmation in the user's language (one sentence).
+For every user input, identify any financial transaction or inventory change and call the appropriate tool immediately. After calling a tool, reply with a brief friendly confirmation in the same language the user wrote in. Default to English if unsure.
 
 Tool usage rules:
 - getFinancialHealth: FIRST check — if the user asks ANY question about profit, loss, earnings, revenue, totals, summary, or business status, IMMEDIATELY call getFinancialHealth without asking anything. Trigger phrases: "profit", "summary", "how am I doing", "earnings", "revenue", "loss", "how much did I make", "business health", "today's numbers". Examples: "What is my profit today?" → call getFinancialHealth. "Give me a summary of today's business" → call getFinancialHealth.
@@ -287,10 +287,20 @@ private fun LedgerMainUi(
 
   fun captureEntryCount(): Int = synchronized(ledgerTools.entries) { ledgerTools.entries.size }
 
-  fun handleResponse(response: String, countBefore: Int) {
+  fun handleResponse(response: String, countBefore: Int, userInput: String = "") {
     viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
     val currentEntries = synchronized(ledgerTools.entries) { ledgerTools.entries.toList() }
     val newEntries = if (countBefore < currentEntries.size) currentEntries.drop(countBefore) else emptyList()
+
+    // Code-level guard: if the user typed text but included no digits, the model hallucinated
+    // an amount. Auto-undo and ask for the real amount.
+    if (userInput.isNotBlank() && userInput.none { it.isDigit() } && newEntries.isNotEmpty()) {
+      newEntries.forEach { ledgerTools.deleteTransaction(it.timestampMs) }
+      viewModel.syncFromTools(ledgerTools)
+      viewModel.addMessage(ChatMessageWarning("No amount found — please include the amount, e.g. \"bought electricity 400\""))
+      return
+    }
+
     newEntries.forEach { entry ->
       if (entry.transactionType == "sale" || entry.transactionType == "income") hapticManager.playSaleClink()
       else hapticManager.playExpenseThud()
@@ -398,7 +408,7 @@ private fun LedgerMainUi(
     if (text.trim().isEmpty()) return
     inputText = ""
     val countBefore = captureEntryCount()
-    viewModel.sendMessage(model, text, onDone = { handleResponse(it, countBefore) }, onError = onError)
+    viewModel.sendMessage(model, text, onDone = { handleResponse(it, countBefore, text) }, onError = onError)
   }
 
   fun processAudio(pcmBytes: ByteArray) {
