@@ -1,8 +1,8 @@
 # Ledger
 
-An on-device AI bookkeeping assistant for Android. Ledger uses Google's LiteRT-LM runtime to run Gemma 4 models entirely on-device — no cloud, no data leaving the phone.
+An on-device AI business partner for Android. Ledger uses Google's LiteRT-LM runtime to run Gemma 4 entirely on-device — no cloud, no data leaving the phone.
 
-You talk to Ledger in plain language (text, voice, SMS, or photo), and it extracts transactions and stock updates automatically, maintaining a running ledger with a live dashboard.
+Speak a transaction, forward a mobile money SMS, or photograph a receipt. Gemma 4 extracts the structured data, updates the ledger, and when asked, delivers specific business recommendations based on that day's real numbers. No forms. No fields. Just conversation.
 
 Built for the [Gemma 4 Good Hackathon](https://www.kaggle.com/competitions/gemma-4-good-hackathon) on Kaggle.
 
@@ -10,20 +10,22 @@ Built for the [Gemma 4 Good Hackathon](https://www.kaggle.com/competitions/gemma
 
 ## Features
 
-- **Natural language entry** — type, speak, forward an SMS, or photograph a receipt; audio clips and WAV files also supported
+- **Five input modes** — type, speak, forward an SMS, photograph a receipt, or attach a WAV audio file; all wired into one extraction pipeline
+- **Multilingual voice** — handles English, Swahili, mixed-language input, regional accents, filler words, and Swahili number words (mia mbili = 200, elfu tano = 5000)
+- **Multi-turn clarification** — when an amount is missing the model asks one follow-up question rather than guessing; conversation context is maintained via the LiteRT-LM KV cache
+- **Business recommendations** — dedicated recommendations engine pulls live revenue, cost, profit, and inventory data and returns 3 to 5 specific actionable recommendations referencing the user's actual item names and amounts
 - **On-device inference** — Gemma 4 via LiteRT-LM; no internet required after model download
-- **Multi-tab UI** — Home (chat + balance), History, Inventory, Settings; smooth fade/slide transitions
-- **Hero balance card** — animated revenue, cost, and net profit with a gradient card; privacy mode masks all amounts app-wide
+- **Multi-tab UI** — Home (chat + balance card), History, Inventory, Settings
+- **Hero balance card** — live revenue, cost, and net profit with a gradient card; privacy mode masks all amounts app-wide with one toggle
 - **Transaction history** — date-grouped list with swipe-to-delete and confidence indicators
 - **Inventory tracking** — per-item stock levels with low-stock badges and alerts
-- **Confidence-based validation** — configurable confirmation dialog for low-confidence or all extractions before writing to the database
-- **SMS monitoring** — opt-in background listener auto-extracts transactions from incoming messages
-- **CSV & PDF export** — shareable A4 PDF report and a structured CSV (transactions, summary, inventory)
-- **Currency selection** — 11 currencies (KES, NGN, GHS, UGX, TZS, ETB, ZAR, RWF, USD, EUR, GBP); persisted and applied everywhere
-- **TTS coaching** — spoken summary of revenue, expenses, and profit
-- **Daily digest** — WorkManager notification at 18:00 with the day's totals
-- **Persistent storage** — Room database with migrations; survives app restarts
+- **Confidence-based validation** — configurable confirmation dialog for low-confidence extractions before writing to the database
+- **SMS monitoring** — opt-in background listener auto-extracts transactions from incoming mobile money confirmations (M-Pesa, MTN MoMo)
+- **CSV and PDF export** — shareable A4 PDF report and structured CSV (transactions, summary, inventory); designed for microloan and tax use cases
+- **11 currencies** — KES, NGN, GHS, UGX, TZS, ETB, ZAR, RWF, USD, EUR, GBP; persisted and applied everywhere including exports
+- **Daily digest** — WorkManager notification at 18:00 with spoken TTS summary of the day's revenue, expenses, and profit
 - **Onboarding walkthrough** — 4-page first-launch guide covering voice entry, SMS monitoring, and image input
+- **Persistent storage** — Room database with migrations; full transaction and stock history survives app restarts
 
 ---
 
@@ -40,7 +42,22 @@ Models are downloaded from HuggingFace on first use via the `litert-community` o
 
 ---
 
-## Getting started
+## Prompt Accuracy
+
+The extraction pipeline is evaluated against a 42-case corpus covering sales, purchases, expenses, income, mobile money SMS, Swahili input, multi-item messages, corrections, clarification sequences, stock updates, and off-topic inputs.
+
+A semantic LLM judge handles language equivalences (sukari = sugar, bob = KES, mia moja = 100) so regional phrasing does not cause false failures.
+
+| Eval | Score |
+|---|---|
+| Single-turn (32 cases) | 100% |
+| Combined purchase + stock (5 cases) | 100% |
+| Multi-turn clarification (5 cases) | 100% |
+| **Overall (42 cases, with judge)** | **97%** |
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
@@ -60,40 +77,40 @@ Models are downloaded from HuggingFace on first use via the `litert-community` o
    cp local.properties.example local.properties
    ```
    Edit `local.properties` and set your SDK path:
-   ```properties
+   ```
    sdk.dir=/path/to/your/Android/Sdk
    ```
 
 3. Open `ledger_standalone/Android/src` in Android Studio and run on a device or emulator (API 31+).
 
-4. On first launch, select a model and tap **Download**. The `litert-community` model files are publicly hosted on HuggingFace — no account or token required. Once downloaded, the model stays on-device.
+4. On first launch, select a model and tap **Download**. Model files are publicly hosted on HuggingFace — no account or token required. Once downloaded the model stays on-device.
 
 ---
 
-## Installing a pre-built APK
+## Installing a Pre-Built APK
 
 Pre-built APKs are published under [Releases](https://github.com/MLComps/ledger/releases). Two variants are provided per release:
 
 | APK | Target |
 |---|---|
-| `ledger-v1.1.0-arm64-v8a.apk` | Physical Android devices (most phones) |
-| `ledger-v1.1.0-x86_64.apk` | Android emulator (x86_64 AVD) |
+| `ledger-v1.2.0-arm64-v8a.apk` | Physical Android devices |
+| `ledger-v1.2.0-x86_64.apk` | Android emulator (x86_64 AVD) |
 
 Install via ADB:
 ```bash
-adb install ledger-v1.1.0-arm64-v8a.apk   # real device
-adb install ledger-v1.1.0-x86_64.apk       # emulator
+adb install ledger-v1.2.0-arm64-v8a.apk   # physical device
+adb install ledger-v1.2.0-x86_64.apk       # emulator
 ```
 
 ---
 
-## Project structure
+## Project Structure
 
 ```
 ledger_standalone/Android/src/
 ├── app/src/main/
 │   ├── java/com/ledger/app/
-│   │   ├── common/        # HapticManager and other app-wide utilities
+│   │   ├── common/        # HapticManager and app-wide utilities
 │   │   ├── data/          # Model metadata, download, DataStore
 │   │   ├── db/            # Room database, DAOs, repository
 │   │   ├── di/            # Hilt modules
@@ -104,7 +121,7 @@ ledger_standalone/Android/src/
 │   │   │   ├── ledger/    # Home tab — chat, hero card, tools, exports
 │   │   │   ├── history/   # History tab — date-grouped transaction list
 │   │   │   ├── inventory/ # Inventory tab — stock levels and alerts
-│   │   │   ├── settings/  # Settings tab — privacy, currency, validation, HF login
+│   │   │   ├── settings/  # Settings tab — currency, privacy, validation
 │   │   │   ├── modelsetup/# Model download screen
 │   │   │   ├── onboarding/# First-launch walkthrough
 │   │   │   ├── theme/     # Material 3 theme, typography, privacy CompositionLocal
@@ -117,64 +134,50 @@ ledger_standalone/Android/src/
 
 ---
 
-## Build variants
+## Build Variants
 
-Two ABI-split release APKs are produced by `./gradlew assembleRelease`:
+Two ABI-split APKs are produced per build:
 
-| Output file | ABI | Use |
+| Output | ABI | Use |
 |---|---|---|
 | `app-arm64-v8a-release.apk` | arm64-v8a | Physical devices |
 | `app-x86_64-release.apk` | x86_64 | Emulator |
 
-Release builds have R8 minification and resource shrinking enabled. Debug builds (`./gradlew assembleDebug`) are also ABI-split and share the same application ID (`com.ledger.app`) — installing a debug build replaces the release build and vice versa.
+Release builds have R8 minification and resource shrinking enabled.
 
-To build:
 ```bash
-# Debug (universal, for quick install during development)
-./gradlew assembleDebug
-
-# Release (ABI-split, optimised)
-./gradlew assembleRelease
+./gradlew assembleDebug    # debug
+./gradlew assembleRelease  # release, ABI-split
 ```
 
 APKs are written to `app/build/outputs/apk/`.
 
 ---
 
-## Emulator notes
+## Emulator Notes
 
 LiteRT-LM inference is memory-intensive. For stable emulator sessions:
 
 - Use at least 4 GB RAM in the AVD config (`hw.ramSize=4096`)
 - Clear host swap before a session: `sudo swapoff -a && sudo swapon -a`
-- The app auto-resets the model engine every 8 inferences to prevent KV cache growth crashes
+- Use the `x86_64` APK — the arm64 APK runs through Houdini translation on x86_64 emulators and crashes LiteRT-LM
 
-Real devices are strongly recommended for extended use.
+Real devices are recommended for extended use.
+
+---
+
+## Eval Scripts
+
+The `scripts/` directory contains the prompt evaluation harness. See [`scripts/README.md`](scripts/README.md) for full usage.
+
+```bash
+cd scripts
+uv sync
+uv run eval_comprehensive.py --backend openrouter --api-key YOUR_KEY --judge-key YOUR_KEY
+```
 
 ---
 
-## Roadmap
+## Stack
 
-**Shipped**
-- [x] Natural language transaction entry (text, voice, SMS, image, audio)
-- [x] On-device Gemma 4 inference via LiteRT-LM
-- [x] Room database with full transaction and stock history
-- [x] CSV and PDF export
-- [x] TTS daily summary and WorkManager digest notification
-- [x] Confidence-based validation before writing to the database
-- [x] Multi-tab UI with History, Inventory, and Settings screens
-- [x] Privacy mode — hide all amounts app-wide
-- [x] HuggingFace OAuth2 PKCE login (wired in Settings; not required for current public models)
-
-**Next**
-- [ ] Prompt accuracy hardening — edge case testing, currency inference, multi-item extractions
-- [ ] Multi-turn clarification — ask a follow-up when a transaction is ambiguous rather than guessing
-- [ ] Smarter context window — summarise older turns to stay within the 32K token limit
-
-**Later**
-- [ ] Multi-account / multi-business support
-- [ ] Recurring transaction detection
-- [ ] Background sync to Google Drive or local backup
-- [ ] Unit and integration tests for core logic
-
----
+Kotlin, Jetpack Compose, Hilt DI, Room, WorkManager, DataStore, LiteRT-LM, Gemma 4
