@@ -15,6 +15,7 @@ enum class ChatMessageType {
   AUDIO_CLIP,
   LOADING,
   CLARIFICATION,
+  RECOMMENDATION,
 }
 
 enum class ChatSide {
@@ -66,6 +67,9 @@ open class ChatMessageText(
 
 class ChatMessageClarification(val question: String) :
   ChatMessage(type = ChatMessageType.CLARIFICATION, side = ChatSide.AGENT)
+
+class ChatMessageRecommendation(val text: String) :
+  ChatMessage(type = ChatMessageType.RECOMMENDATION, side = ChatSide.AGENT)
 
 class ChatMessageAudioClip(
   val audioData: ByteArray,

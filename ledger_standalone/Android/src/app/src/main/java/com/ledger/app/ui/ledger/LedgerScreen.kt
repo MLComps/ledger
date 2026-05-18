@@ -60,6 +60,7 @@ import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -108,6 +109,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -135,6 +137,7 @@ import com.ledger.app.R
 import com.ledger.app.data.Model
 import com.ledger.app.ui.common.chat.AudioRecorderPanel
 import com.ledger.app.ui.common.chat.ChatMessageClarification
+import com.ledger.app.ui.common.chat.ChatMessageRecommendation
 import com.ledger.app.ui.common.chat.ChatMessageText
 import com.ledger.app.ui.common.chat.ChatMessageWarning
 import com.ledger.app.ui.common.chat.ChatSide
@@ -156,7 +159,7 @@ For every input — whether typed text, spoken audio, or image — extract any f
 
 JSON schema:
 {
-  "action": "add_transaction" | "update_stock" | "get_health" | "clarify" | "unknown",
+  "action": "add_transaction" | "update_stock" | "get_health" | "clarify" | "unknown" | "recommend",
   "transactions": [
     {
       "transaction_type": "sale" | "purchase" | "expense" | "income",
@@ -180,6 +183,7 @@ Rules:
 - action="add_transaction" for sales, purchases, income, or expenses
 - action="update_stock" for restocking or stock level changes
 - action="get_health" when asked for totals, summary, or financial health
+- action="recommend" when asked for recommendations, advice, tips, or "what should I do"; put 3–5 numbered actionable recommendations in the "message" field referencing actual item names and amounts from the context provided
 - action="unknown" if no financial action is found
 - action="clarify" ONLY when the amount is completely absent AND cannot be inferred; examples that MUST clarify: "Sold mangoes" → clarify; "I sold some tomatoes" → clarify; "bought electricity credits" → clarify; "paid for airtime" → clarify; "bought flour from supplier" → clarify; "tomatoes transaction" → clarify; do NOT clarify for unclear item names — use confidence="low" instead; do NOT clarify for stock-only updates; RULE: if the user's message contains NO number (digit or number word), output action="clarify"
 - If the amount IS present, ALWAYS record even if the item is vague (use item="goods") — never clarify when an amount is stated
@@ -334,8 +338,8 @@ private fun LedgerMainUi(
         viewModel.addMessage(ChatMessageClarification(result.question))
       }
       is ParseResult.Transactions -> {
-        // If the user's typed input had no digits, the model hallucinated an amount — ask instead.
-        if (userInput.isNotBlank() && userInput.none { it.isDigit() }) {
+        // If the user typed text with no digits but a transaction was parsed, the model hallucinated an amount.
+        if (userInput.isNotBlank() && userInput.none { it.isDigit() } && result.list.isNotEmpty()) {
           viewModel.setClarificationPending(true)
           val item = result.list.firstOrNull()?.item?.takeIf { it.isNotBlank() && it != "goods" } ?: "that"
           viewModel.addMessage(ChatMessageClarification("How much did you pay for the $item?"))
@@ -363,6 +367,10 @@ private fun LedgerMainUi(
           } ?: result.message
         } else result.message
         viewModel.addMessage(ChatMessageText(content = displayMessage, side = ChatSide.AGENT))
+      }
+      is ParseResult.Recommendation -> {
+        viewModel.setClarificationPending(false)
+        viewModel.addMessage(ChatMessageRecommendation(result.text))
       }
       is ParseResult.Empty -> {
         viewModel.setClarificationPending(false)
@@ -515,14 +523,6 @@ private fun LedgerMainUi(
           },
         )
 
-        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        val (fabLabel, fabIcon) = remember(currentHour) {
-          when (currentHour) {
-            in 6..10 -> "Restock" to Icons.Rounded.Inventory2
-            in 20..23, in 0..5 -> "Close Day" to Icons.Rounded.History
-            else -> "Quick Sale" to Icons.Rounded.Add
-          }
-        }
         var showFabMenu by remember { mutableStateOf(false) }
 
         @OptIn(ExperimentalFoundationApi::class)
@@ -535,11 +535,49 @@ private fun LedgerMainUi(
               .combinedClickable(
                 onClick = {
                   hapticManager.playTick()
-                  when (fabLabel) {
-                    "Close Day" -> showRitualSummary = true
-                    "Restock" -> inputText = "Restocked "
-                    else -> inputText = "Sold "
+                  val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+                  val timeOfDay = when (hour) {
+                    in 5..11 -> "morning"; in 12..16 -> "afternoon"
+                    in 17..20 -> "evening"; else -> "night"
                   }
+                  // Read fresh data from ledgerTools directly to avoid stale uiState
+                  val health = ledgerTools.getFinancialHealth()
+                  val rev = (health["total_revenue"] as? Double) ?: 0.0
+                  val cost = (health["total_cost"] as? Double) ?: 0.0
+                  val profit = rev - cost
+                  val txCount = (health["transaction_count"] as? Int) ?: 0
+                  @Suppress("UNCHECKED_CAST")
+                  val stockItems = health["stock_items"] as? List<Map<String, Any>> ?: emptyList()
+                  val cur = uiState.selectedCurrency
+
+                  val sb = StringBuilder()
+                  sb.append("Please give me business recommendations. action=recommend\n")
+                  sb.append("Time of day: $timeOfDay\n")
+                  sb.append("Sales and income: $cur ${formatAmount(rev)}\n")
+                  sb.append("Purchases and expenses: $cur ${formatAmount(cost)}\n")
+                  sb.append(if (profit >= 0) "Net profit: $cur ${formatAmount(profit)}\n" else "Net loss: $cur ${formatAmount(Math.abs(profit))}\n")
+                  sb.append("Number of transactions: $txCount\n")
+                  val entries = synchronized(ledgerTools.entries) { ledgerTools.entries.toList() }
+                  if (entries.isNotEmpty()) {
+                    sb.append("Recent transactions: ")
+                    sb.append(entries.takeLast(15).joinToString("; ") { e ->
+                      "${e.transactionType} ${e.item} ${e.currency} ${formatAmount(e.amount)}" +
+                        if (e.quantity != 1.0) " x${fmtQty(e.quantity)}${e.unit}" else ""
+                    })
+                    sb.append("\n")
+                  }
+                  if (stockItems.isNotEmpty()) {
+                    sb.append("Stock on hand: ")
+                    sb.append(stockItems.take(15).joinToString("; ") { s ->
+                      val qty = s["quantity"] as? Double ?: 0.0
+                      val unit = s["unit"] as? String ?: ""
+                      val name = s["item"] as? String ?: ""
+                      "$name ${fmtQty(qty)}$unit${if (qty <= 3.0) " LOW" else ""}"
+                    })
+                    sb.append("\n")
+                  }
+                  sb.append("Give 3 to 5 specific actionable recommendations using the real item names and amounts above.")
+                  processText(sb.toString())
                 },
                 onLongClick = { hapticManager.playTick(); showFabMenu = true },
               )
@@ -547,8 +585,8 @@ private fun LedgerMainUi(
             contentAlignment = Alignment.Center,
           ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              Icon(fabIcon, null, modifier = Modifier.size(14.dp), tint = Color.White)
-              Text(fabLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+              Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(14.dp), tint = Color.White)
+              Text("Recommendations", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
             }
           }
           DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
@@ -649,6 +687,7 @@ private fun LedgerMainUi(
               message = message,
               onSkip = { viewModel.setClarificationPending(false) },
             )
+            is ChatMessageRecommendation -> RecommendationBubble(message = message)
             is ChatMessageWarning -> Box(
               modifier = Modifier.fillMaxWidth(),
               contentAlignment = Alignment.Center,
@@ -854,13 +893,12 @@ private fun HeroBalanceCard(
     shape = RoundedCornerShape(24.dp),
     elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp),
   ) {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Box(
       modifier = Modifier.fillMaxWidth().background(
         Brush.linearGradient(
-          colors = listOf(
-            MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.tertiary,
-          )
+          colors = if (isDark) listOf(Color(0xFF1E3B1A), Color(0xFF0E2D28))
+                  else        listOf(Color(0xFF1B5E20), Color(0xFF00695C))
         )
       )
     ) {
@@ -980,6 +1018,114 @@ private fun HeroBalanceCard(
 }
 
 // ── Chat composables ──────────────────────────────────────────────────────────
+
+@Composable
+private fun RecommendationBubble(message: ChatMessageRecommendation) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+    horizontalArrangement = Arrangement.Start,
+  ) {
+    val shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
+    Column(
+      modifier = Modifier
+        .fillMaxWidth(0.95f)
+        .clip(shape)
+        .background(MaterialTheme.colorScheme.surface)
+        .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f), shape),
+    ) {
+      // Header bar
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+          .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+        Text(
+          "Recommendations",
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.primary,
+        )
+      }
+
+      // Parse numbered/bulleted lines
+      val rawLines = message.text.lines()
+      val items = mutableListOf<String>()
+      val buf = StringBuilder()
+      for (line in rawLines) {
+        val t = line.trim()
+        if (t.isEmpty()) continue
+        val startsNew = t.matches(Regex("^[0-9]+[.)].+")) || t.startsWith("•") || t.startsWith("-")
+        if (startsNew) {
+          if (buf.isNotBlank()) items += buf.toString().trim()
+          buf.clear(); buf.append(t)
+        } else if (buf.isNotBlank()) {
+          buf.append(" ").append(t)
+        } else {
+          items += t
+        }
+      }
+      if (buf.isNotBlank()) items += buf.toString().trim()
+
+      Column(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        items.forEach { item ->
+          val numMatch = Regex("^([0-9]+)[.)\\s]+(.+)$", RegexOption.DOT_MATCHES_ALL).find(item)
+          val bulletMatch = item.startsWith("•") || item.startsWith("-")
+          when {
+            numMatch != null -> Row(
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              verticalAlignment = Alignment.Top,
+            ) {
+              Box(
+                modifier = Modifier
+                  .size(22.dp)
+                  .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), CircleShape),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  numMatch.groupValues[1],
+                  style = MaterialTheme.typography.labelSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.primary,
+                )
+              }
+              Text(
+                numMatch.groupValues[2].trim(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+              )
+            }
+            bulletMatch -> Row(
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+              verticalAlignment = Alignment.Top,
+            ) {
+              Box(
+                modifier = Modifier.size(22.dp),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text("•", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+              }
+              Text(
+                item.trimStart('•', '-', ' '),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+              )
+            }
+            else -> Text(item, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
+      }
+    }
+  }
+}
 
 @Composable
 private fun ClarificationBubble(message: ChatMessageClarification, onSkip: () -> Unit) {
@@ -1217,6 +1363,7 @@ private fun ConfirmTransactionsDialog(
 sealed class ParseResult {
   data class Transactions(val list: List<PendingTransaction>, val message: String) : ParseResult()
   data class ClarificationNeeded(val question: String) : ParseResult()
+  data class Recommendation(val text: String) : ParseResult()
   object Empty : ParseResult()
 }
 
@@ -1230,6 +1377,11 @@ private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: 
     if (action == "clarify") {
       val question = json.optString("question", "").ifBlank { "Could you provide more details?" }
       return ParseResult.ClarificationNeeded(question)
+    }
+
+    if (action == "recommend") {
+      val recs = json.optString("message", "").ifBlank { "No recommendations available. Try recording some transactions first." }
+      return ParseResult.Recommendation(recs)
     }
 
     if (action == "get_health") {
