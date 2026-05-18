@@ -118,6 +118,34 @@ def check_case(case: dict, parsed: dict) -> list[FieldResult]:
     results = []
     expected = case.get("expected", {})
 
+    # Combined purchase+stock cases (expected_transaction + expected_stock)
+    if case.get("type") == "combined":
+        exp_tx = case.get("expected_transaction", {})
+        exp_stock = case.get("expected_stock", {})
+        results.append(FieldResult("action", "add_transaction", parsed.get("action"), parsed.get("action") == "add_transaction"))
+        txs = parsed.get("transactions", [])
+        tx = txs[0] if txs else {}
+        for f in ["transaction_type", "item", "amount", "currency", "confidence"]:
+            if f not in exp_tx:
+                continue
+            actual_val = tx.get(f)
+            exp_val = exp_tx[f]
+            if f == "item":
+                match = exp_val.lower() in str(actual_val).lower() or str(actual_val).lower() in exp_val.lower()
+            elif f == "amount":
+                match = abs(float(actual_val or 0) - float(exp_val)) < 0.01
+            else:
+                match = str(actual_val).lower() == str(exp_val).lower()
+            results.append(FieldResult(f, exp_val, actual_val, match))
+        updates = parsed.get("stock_updates", [])
+        upd = updates[0] if updates else {}
+        results.append(FieldResult("stock_update_present", True, bool(upd), bool(upd)))
+        if upd and "item" in exp_stock:
+            results.append(FieldResult("stock_item", exp_stock["item"].lower(), upd.get("item", "").lower(), exp_stock["item"].lower() in upd.get("item", "").lower()))
+        if upd and "quantity_delta" in exp_stock:
+            results.append(FieldResult("stock_quantity_delta", exp_stock["quantity_delta"], upd.get("quantity_delta"), upd.get("quantity_delta") == exp_stock["quantity_delta"]))
+        return results
+
     # For multi-item cases, check action and count only
     if case.get("expected_count"):
         tx = parsed.get("transactions", [])
@@ -232,6 +260,8 @@ def run_eval(
 
     results: list[CaseResult] = []
     for case in cases:
+        if case.get("type") == "multi_turn":
+            continue  # multi-turn cases handled by eval_comprehensive.py
         case_id = case["id"]
         user_input = case["input"]
         print(f"  [{case_id}] {user_input[:60]}...", end="", flush=True)

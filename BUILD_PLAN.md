@@ -194,3 +194,46 @@ Fixes to Gemini's UI/UX additions before continuing the build plan.
 - [ ] Recurring transaction detection and reminder
 - [ ] Unit tests for `LedgerTools` JSON parsing and transaction classification
 - [ ] Instrument tests for Room DAO operations
+
+---
+
+## Phase 9 — Intelligence Architecture (future)
+
+Derived from cross-analysis of `scripts/test_new.ipynb` and Gemini notebook review. Ranked by priority.
+
+### 9a — Constrained decoding (High priority)
+- [ ] Strip markdown fence instruction from system prompt ("respond only with JSON, no code blocks") so constrained decoding can be re-enabled without the fence interference that caused the prior revert
+- [ ] Re-enable `ExperimentalFlags.enableConversationConstrainedDecoding = true` with the corrected prompt
+- [ ] Remove the `indexOf('{')`/`lastIndexOf('}')` scraper fallback once decoding is reliable — eliminates `lastRawJson` re-parsing and the correction loop
+
+### 9b — Automatic tool calling (High priority)
+- [ ] Re-wire `LedgerTools` with `@Tool` / `@ToolParam` annotations and pass it as `tools` in all three `initialize()` / `resetEngine()` calls with `automaticToolCalling = true`
+- [ ] Remove `parseResponse`, `handleResponse` JSON parsing, `clarificationPending` state, and the entire manual tool-dispatch layer — the engine handles the call/result/continue loop internally
+- [ ] The model calls `add_transaction(item="tomatoes", amount=400)` directly; no more coercion via prompt engineering
+
+### 9c — Vision GPU backend (High priority)
+- [ ] Switch image inference from `Backend.CPU()` to `Backend.GPU()` with CPU fallback (already scaffolded in `LlmChatModelHelper`) — notebook shows ~900ms–1.2s for receipt/invoice analysis on GPU vs multi-second on CPU
+
+### 9d — Visual Stock Audit (Medium priority)
+- [ ] Add "Visual Audit" button to the Inventory tab — camera capture → `Content.ImageBytes` → stock update structured output
+- [ ] Model estimates quantities from shelf photo; pre-populates a stock update dialog for confirmation
+- [ ] Prompt: quantity estimation from visual scene, not transaction extraction
+
+### 9e — Financial Coach persona (Medium priority)
+- [ ] Add a Coach toggle in chat UI — switches system prompt via `resetConversation()` to a coaching prompt focused on pricing strategy, reorder advice, margin analysis
+- [ ] Shift `SensoryBackground` palette to amber/cyan when Coach mode is active to signal the mode change visually
+- [ ] Pairs with the existing close-day summary; turns Ledger from a bookkeeper into a business advisor
+
+### 9f — SMS field-level extraction (Medium priority)
+- [ ] Restructure the `LedgerSmsReceiver` prompt to request explicit fields: `Direction`, `Counterparty`, `FT_ID`, `Amount`, `Balance`
+- [ ] Validate with constrained decoding once 9a is in place
+- [ ] Targets M-Pesa / MTN MoMo confirmations with enterprise-grade accuracy
+
+### 9g — Conversation lifecycle (Low priority)
+- [ ] Replace 8-inference auto-reset with a per-session fresh `Conversation` — keep the engine alive (expensive init), create a new `Conversation` at the start of each logical chat session
+- [ ] Eliminates surprising mid-conversation engine tear-down; makes memory usage predictable
+
+### 9h — Thinking mode UI surface (Low priority)
+- [ ] Surface `responseMessage.channels["thought"]` in the ViewModel (currently received but discarded)
+- [ ] Collapsible "thinking" section above each model response — similar to Gemini Advanced reasoning display
+- [ ] Already fully wired at the engine level; UI is the only missing piece

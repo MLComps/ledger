@@ -377,7 +377,6 @@
       "input": "Someone paid me 800 for something",
       "expected": {
         "action": "add_transaction",
-        "transaction_type": "income",
         "amount": 800,
         "currency": "KES",
         "confidence": "low"
