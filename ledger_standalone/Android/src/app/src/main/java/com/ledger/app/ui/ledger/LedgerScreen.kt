@@ -156,14 +156,14 @@ Tool usage rules:
   - confidence="medium": you computed the total (e.g. "3 at 30 each" → 90) or amount is approximate ("about 350")
   - confidence="low": item is vague ("that thing", "something", "it", "stuff") — ALWAYS call addTransaction with confidence="low" when an amount IS stated, even if the item is unclear. Use item="goods" for completely unknown items.
   - RULE: if an amount IS stated, ALWAYS call addTransaction, no matter how vague the item. Never clarify when an amount is given.
-  - Always provide the item parameter. Use item="goods" if the item is completely unclear. Use item="M-Pesa payment" for mobile money received.
+  - Always provide the item parameter. Use item="goods" if the item is completely unclear.
   - Never call addTransaction with amount=0 or unknown amount — ask for clarification instead.
 - updateStock: ONLY for pure inventory adjustments where NO purchase price is stated (e.g. "I received 10 kg of rice" with no price, "added 50 soap to shelf" with no price). If a purchase amount is mentioned alongside storage or restocking, call addTransaction (transactionType="purchase") instead — do NOT call updateStock. Example: "Got 50 packets soap from supplier for 3000, added to shelf" → addTransaction(purchase, 3000), NOT updateStock.
 
 Currency defaults to $currency. Always use the 3-letter ISO code (e.g. KES not KSH).
 If the amount is completely absent AND cannot be inferred, ask one short clarifying question in the user's language. Do NOT call any tool in this case. Examples that require clarification: "Sold mangoes" (no amount), "I sold some milk today" (no amount), "tomatoes transaction" (no amount or direction), "Got payment from a customer" (no amount stated).
 
-M-Pesa / mobile money: "Ksh X received from NAME" → addTransaction income, currency KES, item="M-Pesa payment"; "Ksh X sent to NAME" → addTransaction expense, currency KES.
+M-Pesa / mobile money: "Ksh X received from NAME" → addTransaction, transactionType="income", item="M-Pesa payment", currency="KES"; "Ksh X sent to NAME" → addTransaction, transactionType="expense", currency="KES", item=what was paid for (e.g. "airtime", "bill payment"). Only apply M-Pesa rules when the message uses "Ksh" prefix or mentions M-Pesa/Mpesa explicitly. For other payments without M-Pesa context, use item describing the payment nature (e.g. "previous sale payment", "debt repayment", "loan repayment").
 Swahili: uza/uliuza=sold, nunua/nilinunua=bought, lipa/nilipa=paid. Numbers: moja=1, mbili=2, tatu=3, nne=4, tano=5, kumi=10, ishirini=20, thelathini=30, hamsini=50, mia=100, elfu=1000. Example: "uza sukari kilo moja mia moja" → sold 1 kg sugar for 100 $currency."""
 
 // ── Entry point ───────────────────────────────────────────────────────────────
