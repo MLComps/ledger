@@ -90,6 +90,8 @@ data class LedgerUiState(
   val validationMode: String = "all",
   val smsEnabled: Boolean = true,
   val themeMode: String = "system",
+  val clarificationPending: Boolean = false,
+  val lastRawJson: String = "",
 )
 
 @HiltViewModel
@@ -550,6 +552,14 @@ constructor(
 
   fun setResettingEngine(resetting: Boolean) {
     _uiState.update { it.copy(resettingEngine = resetting) }
+  }
+
+  fun setClarificationPending(pending: Boolean) {
+    _uiState.update { it.copy(clarificationPending = pending) }
+  }
+
+  fun setLastRawJson(json: String) {
+    _uiState.update { it.copy(lastRawJson = json) }
   }
 
   fun resetEngine(

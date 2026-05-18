@@ -15,6 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.InfiniteRepeatableSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -27,12 +29,15 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -53,8 +58,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.automirrored.rounded.TrendingDown
 import androidx.compose.material.icons.automirrored.rounded.TrendingUp
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Audiotrack
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.GridOn
@@ -63,12 +70,11 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhotoCamera
-import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Sms
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -79,6 +85,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -101,7 +108,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -113,9 +119,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -131,6 +134,7 @@ import com.ledger.app.BuildConfig
 import com.ledger.app.R
 import com.ledger.app.data.Model
 import com.ledger.app.ui.common.chat.AudioRecorderPanel
+import com.ledger.app.ui.common.chat.ChatMessageClarification
 import com.ledger.app.ui.common.chat.ChatMessageText
 import com.ledger.app.ui.common.chat.ChatMessageWarning
 import com.ledger.app.ui.common.chat.ChatSide
@@ -138,33 +142,70 @@ import com.ledger.app.ui.common.SensoryBackground
 import com.ledger.app.ui.theme.LocalPrivacyMode
 import com.ledger.app.common.HapticManager
 import java.io.File
+import java.util.Calendar
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
-import com.google.ai.edge.litertlm.tool
+import org.json.JSONObject
 
 private const val TAG = "LedgerScreen"
 
 private fun buildSystemPrompt(currency: String) =
-  """You are Ledger, an offline bookkeeping assistant for market vendors. You have three tools: addTransaction, updateStock, and getFinancialHealth.
+  """You are Ledger, an offline bookkeeping assistant for market vendors.
 
-For every user input, identify any financial transaction or inventory change and call the appropriate tool immediately. After calling a tool, reply with a brief friendly confirmation. ALWAYS reply in English unless the user's message is written in Swahili — in that case reply in Swahili. Never reply in any other language.
+For every input — whether typed text, spoken audio, or image — extract any financial transaction or stock update mentioned, then respond with ONLY a valid JSON object. Output no other text.
 
-Tool usage rules:
-- getFinancialHealth: FIRST check — if the user asks ANY question about profit, loss, earnings, revenue, totals, summary, or business status, IMMEDIATELY call getFinancialHealth without asking anything. Trigger phrases: "profit", "summary", "how am I doing", "earnings", "revenue", "loss", "how much did I make", "business health", "today's numbers". Examples: "What is my profit today?" → call getFinancialHealth. "Give me a summary of today's business" → call getFinancialHealth.
-- addTransaction: for sales, purchases, expenses, and income. Default transactionType is "sale" unless context says otherwise.
-  - confidence="high": amount directly stated ("sold sugar 100", "paid 500 for rent")
-  - confidence="medium": you computed the total (e.g. "3 at 30 each" → 90) or amount is approximate ("about 350")
-  - confidence="low": item is vague ("that thing", "something", "it", "stuff") — ALWAYS call addTransaction with confidence="low" when an amount IS stated, even if the item is unclear. Use item="goods" for completely unknown items.
-  - RULE: if an amount IS stated, ALWAYS call addTransaction, no matter how vague the item. Never clarify when an amount is given.
-  - Always provide the item parameter. Use item="goods" if the item is completely unclear.
-  - NEVER guess or infer an amount. ONLY record amounts the user explicitly stated. Before calling addTransaction, check: does the user's message contain a number? If no digits appear in the message, do NOT call addTransaction — ask for the amount first. Example: "bought electricity credits" (no number) → ask "How much did you pay?"; "bought electricity for 400" (has 400) → record.
-- updateStock: ONLY for pure inventory adjustments where NO purchase price is stated (e.g. "I received 10 kg of rice" with no price, "added 50 soap to shelf" with no price). If a purchase amount is mentioned alongside storage or restocking, call addTransaction (transactionType="purchase") instead — do NOT call updateStock. Example: "Got 50 packets soap from supplier for 3000, added to shelf" → addTransaction(purchase, 3000), NOT updateStock.
+JSON schema:
+{
+  "action": "add_transaction" | "update_stock" | "get_health" | "clarify" | "unknown",
+  "transactions": [
+    {
+      "transaction_type": "sale" | "purchase" | "expense" | "income",
+      "item": "product or service name",
+      "amount": <number>,
+      "currency": "<3-letter code e.g. KES RWF GHS NGN ZAR>",
+      "quantity": <number>,
+      "unit": "<kg pieces sack litre etc>",
+      "cost": <cost-of-goods, 0 if unknown>,
+      "confidence": "high" | "medium" | "low"
+    }
+  ],
+  "stock_updates": [
+    { "item": "<name>", "quantity_delta": <number>, "unit": "<unit>" }
+  ],
+  "question": "<one short question in the user's language — only present when action=clarify>",
+  "message": "<one sentence in the user's language confirming what was recorded — only present when action is not clarify>"
+}
 
-Currency defaults to $currency. Always use the 3-letter ISO code (e.g. KES not KSH).
-If the amount is completely absent AND cannot be inferred, ask one short clarifying question in the user's language. Do NOT call any tool in this case. Examples that require clarification: "Sold mangoes" (no amount), "I sold some milk today" (no amount), "tomatoes transaction" (no amount or direction), "Got payment from a customer" (no amount stated).
-
-M-Pesa / mobile money: "Ksh X received from NAME" → addTransaction, transactionType="income", item="M-Pesa payment", currency="KES"; "Ksh X sent to NAME" → addTransaction, transactionType="expense", currency="KES", item=what was paid for (e.g. "airtime", "bill payment"). Only apply M-Pesa rules when the message uses "Ksh" prefix or mentions M-Pesa/Mpesa explicitly. For other payments without M-Pesa context, use item describing the payment nature (e.g. "previous sale payment", "debt repayment", "loan repayment").
-Swahili input decoder (use only to interpret user messages, NOT for your replies unless user wrote in Swahili): uza/uliuza=sold, nunua/nilinunua=bought, lipa/nilipa=paid. Numbers: moja=1, mbili=2, tatu=3, nne=4, tano=5, kumi=10, ishirini=20, thelathini=30, hamsini=50, mia=100, elfu=1000. Example input: "uza sukari kilo moja mia moja" → sold 1 kg sugar for 100 $currency."""
+Rules:
+- action="add_transaction" for sales, purchases, income, or expenses
+- action="update_stock" for restocking or stock level changes
+- action="get_health" when asked for totals, summary, or financial health
+- action="unknown" if no financial action is found
+- action="clarify" ONLY when the amount is completely absent AND cannot be inferred; examples that MUST clarify: "Sold mangoes" → clarify; "I sold some tomatoes" → clarify; "bought electricity credits" → clarify; "paid for airtime" → clarify; "bought flour from supplier" → clarify; "tomatoes transaction" → clarify; do NOT clarify for unclear item names — use confidence="low" instead; do NOT clarify for stock-only updates; RULE: if the user's message contains NO number (digit or number word), output action="clarify"
+- If the amount IS present, ALWAYS record even if the item is vague (use item="goods") — never clarify when an amount is stated
+- Corrections WITH a stated amount ("actually it was 500 not 5000 for the rice") → action="add_transaction", confidence="medium", default transaction_type="sale" unless context says otherwise
+- Corrections WITHOUT a stated amount ("cancel that", "it was a purchase not a sale") → action="unknown"
+- When action="clarify": transactions and stock_updates MUST be empty arrays []; include a "question" field with one short question in the user's language; omit the "message" field entirely
+- transactions and stock_updates may be empty arrays []
+- currency defaults to $currency if not mentioned; always output the 3-letter ISO code (e.g. KES not KSH)
+- cost defaults to 0 if not mentioned
+- IMPORTANT: the "action" field must ONLY be one of: "add_transaction", "update_stock", "get_health", "clarify", "unknown" — never "sale", "purchase", "income", or "expense"
+- transaction_type rules (applies to transaction_type field only, not action):
+  - "sale": vendor sold goods or services directly; use when no explicit buy/sell direction is stated (default to sale); examples: "sold tomatoes 80"→sale, "3 packets uji at 30 each"→sale, "customer paid GHS 80 for charcoal"→sale, "sold airtime 500"→sale, "5 mangoes for 200"→sale
+  - "income": vendor received money NOT from a direct product sale — past debt repayment; examples: "paid 500 for previous sale"→income, "customer paid what they owed"→income, "received 1500 from John for debt"→income; these income transactions with clearly stated amounts → confidence="high"
+  - "purchase": vendor explicitly paid money to buy goods to restock or resell — requires "I bought", "I paid for", "from supplier", "purchased", "nilinunua" (Swahili)
+  - "expense": vendor paid money for services or overhead (rent, electricity, transport, bills)
+- For corrections like "actually it was X not Y": transaction_type="sale" unless message explicitly says "purchase" or "bought"; confidence="medium"
+- Corrections WITHOUT a stated amount ("cancel that", "it was a purchase not a sale") → action="unknown"
+- For M-Pesa confirmations: "Ksh X received from NAME" → action="add_transaction", transaction_type="income", item="M-Pesa payment", currency="KES"; "Ksh X sent to NAME" → action="add_transaction", transaction_type="expense", item=the stated purpose if given, currency="KES"
+- When a purchase involves adding goods to inventory for resale, include BOTH a transactions entry (transaction_type="purchase") AND a stock_updates entry in the same response
+- item: vague category words like "stuff", "things" → item="goods", confidence="medium"; deictic/pronoun references like "that thing", "something", "it", "this" → item="goods", confidence="low"
+- Swahili number words: moja=1, mbili=2, tatu=3, nne=4, tano=5, kumi=10, ishirini=20, thelathini=30, hamsini=50, mia=100 (hundred), elfu=1000 (thousand); examples: "mia moja"=100, "mia mbili"=200, "elfu mbili"=2000; verbs: uza/uliuza=sold, nunua/nilinunua=bought, lipa/nilipa=paid; example: "uza sukari kilo moja mia moja" → sold 1 kg sugar for 100
+- confidence levels — strict rules, not guidelines:
+  - "high": specific named item AND directly stated amount (a number or number word like "two hundred", "fifty bob"); voice fillers (um, uh, like, so) do NOT reduce confidence; currency defaulting does NOT reduce confidence; income payments with clearly stated amounts → high
+  - "medium": if ANY of these apply: (1) YOU computed the total (e.g. "3 at 30 each"→90, "5 crates at 500 each"→2500), (2) approximate amount ("about", "around", "roughly"), (3) input starts with correction phrase ("actually it was", "wait it was", "no it was"), (4) generic category word item ("goods", "stuff") — MUST be medium if any apply
+  - "low": user referred to the item with a deictic or bare pronoun ("that thing", "something", "it", "this thing") — ALWAYS low for these; examples: "sold that thing for 200"→low, "paid me 800 for something"→low, even if item="goods"
+- Output a single JSON object. Start your response with { and end with }. No other text."""
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
@@ -190,7 +231,6 @@ fun LedgerMainScreen(
       context = context,
       model = model,
       systemPrompt = buildSystemPrompt(uiState.selectedCurrency),
-      tools = listOf(tool(ledgerTools)),
       onError = { error -> errorDialogContent = error; showErrorDialog = true },
     )
   }
@@ -251,7 +291,7 @@ fun LedgerMainScreen(
         Button(
           onClick = {
             showErrorDialog = false; errorDialogContent = ""
-            viewModel.resetEngine(context, model, buildSystemPrompt(uiState.selectedCurrency), tools = listOf(tool(ledgerTools))) { errorDialogContent = it; showErrorDialog = true }
+            viewModel.resetEngine(context, model, buildSystemPrompt(uiState.selectedCurrency)) { errorDialogContent = it; showErrorDialog = true }
           },
           colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
         ) { Text(stringResource(R.string.reset)) }
@@ -280,49 +320,55 @@ private fun LedgerMainUi(
   var showAttachMenu by remember { mutableStateOf(false) }
   var cameraImageUri by remember { mutableStateOf<Uri?>(null) }
   var curAmplitude by remember { mutableIntStateOf(0) }
+  var pendingTransactions by remember { mutableStateOf<List<PendingTransaction>>(emptyList()) }
+  var showRitualSummary by remember { mutableStateOf(false) }
   var showDebugOverlay by remember { mutableStateOf(false) }
   var debugTapCount by remember { mutableIntStateOf(0) }
   var showEmptyExportDialog by remember { mutableStateOf(false) }
-  var pendingNewEntries by remember { mutableStateOf<List<LedgerEntry>>(emptyList()) }
 
-  fun captureEntryCount(): Int = synchronized(ledgerTools.entries) { ledgerTools.entries.size }
-
-  fun handleResponse(response: String, countBefore: Int, userInput: String = "") {
-    viewModel.addMessage(ChatMessageText(content = response, side = ChatSide.AGENT))
-    val currentEntries = synchronized(ledgerTools.entries) { ledgerTools.entries.toList() }
-    val newEntries = if (countBefore < currentEntries.size) currentEntries.drop(countBefore) else emptyList()
-
-    // Code-level guard: if the user typed text but included no digits, the model hallucinated
-    // an amount. Auto-undo and ask for the real amount.
-    if (userInput.isNotBlank() && userInput.none { it.isDigit() } && newEntries.isNotEmpty()) {
-      newEntries.forEach { ledgerTools.deleteTransaction(it.timestampMs) }
-      viewModel.syncFromTools(ledgerTools)
-      viewModel.addMessage(ChatMessageWarning("No amount found — please include the amount, e.g. \"bought electricity 400\""))
-      return
+  fun handleResponse(response: String, userInput: String = "") {
+    viewModel.setLastRawJson(response)
+    when (val result = parseResponse(response, ledgerTools, uiState.selectedCurrency)) {
+      is ParseResult.ClarificationNeeded -> {
+        viewModel.setClarificationPending(true)
+        viewModel.addMessage(ChatMessageClarification(result.question))
+      }
+      is ParseResult.Transactions -> {
+        // If the user's typed input had no digits, the model hallucinated an amount — ask instead.
+        if (userInput.isNotBlank() && userInput.none { it.isDigit() }) {
+          viewModel.setClarificationPending(true)
+          val item = result.list.firstOrNull()?.item?.takeIf { it.isNotBlank() && it != "goods" } ?: "that"
+          viewModel.addMessage(ChatMessageClarification("How much did you pay for the $item?"))
+          return
+        }
+        viewModel.setClarificationPending(false)
+        val mode = uiState.validationMode
+        val needsConfirm = result.list.filter { tx ->
+          when (mode) {
+            "all" -> true
+            "critical" -> tx.confidence == "low"
+            else -> false
+          }
+        }
+        val autoApply = result.list - needsConfirm.toSet()
+        autoApply.forEach {
+          commitTransaction(it, ledgerTools)
+          if (it.transactionType == "sale" || it.transactionType == "income") hapticManager.playSaleClink()
+          else hapticManager.playExpenseThud()
+        }
+        if (needsConfirm.isNotEmpty()) pendingTransactions = needsConfirm
+        val displayMessage = if (result.message.isBlank() || result.message == "Done.") {
+          autoApply.firstOrNull()?.let { tx ->
+            "${tx.transactionType.replaceFirstChar { it.uppercase() }} recorded: ${tx.item} — ${tx.currency} ${formatAmount(tx.amount)}"
+          } ?: result.message
+        } else result.message
+        viewModel.addMessage(ChatMessageText(content = displayMessage, side = ChatSide.AGENT))
+      }
+      is ParseResult.Empty -> {
+        viewModel.setClarificationPending(false)
+        viewModel.addMessage(ChatMessageText(content = "I couldn't understand that. Could you rephrase?", side = ChatSide.AGENT))
+      }
     }
-
-    newEntries.forEach { entry ->
-      if (entry.transactionType == "sale" || entry.transactionType == "income") hapticManager.playSaleClink()
-      else hapticManager.playExpenseThud()
-    }
-    val toConfirm = when (uiState.validationMode) {
-      "all" -> newEntries
-      "critical" -> newEntries.filter { it.confidence == "low" }
-      else -> emptyList()
-    }
-    if (toConfirm.isNotEmpty()) pendingNewEntries = toConfirm
-  }
-
-  if (pendingNewEntries.isNotEmpty()) {
-    NewEntriesConfirmDialog(
-      entries = pendingNewEntries,
-      onKeep = { pendingNewEntries = emptyList() },
-      onUndo = {
-        pendingNewEntries.forEach { ledgerTools.deleteTransaction(it.timestampMs) }
-        viewModel.syncFromTools(ledgerTools)
-        pendingNewEntries = emptyList()
-      },
-    )
   }
 
   if (showEmptyExportDialog) {
@@ -331,6 +377,14 @@ private fun LedgerMainUi(
       title = { Text("Nothing to export") },
       text = { Text("No transactions have been recorded yet. Add some transactions before exporting.") },
       confirmButton = { TextButton(onClick = { showEmptyExportDialog = false }) { Text("OK") } },
+    )
+  }
+
+  if (pendingTransactions.isNotEmpty()) {
+    ConfirmTransactionsDialog(
+      transactions = pendingTransactions,
+      onConfirm = { pendingTransactions.forEach { commitTransaction(it, ledgerTools) }; pendingTransactions = emptyList() },
+      onDismiss = { pendingTransactions = emptyList() },
     )
   }
 
@@ -352,13 +406,19 @@ private fun LedgerMainUi(
     )
   }
 
-  val smsPermissionGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+  var smsPermissionGranted by remember {
+    mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED)
+  }
+  var smsEnabled by remember(smsPermissionGranted) { mutableStateOf(smsPermissionGranted) }
+  val smsPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    smsPermissionGranted = granted
+    if (granted) smsEnabled = true
+  }
 
-  DisposableEffect(smsPermissionGranted, uiState.smsEnabled, model.name) {
-    if (!smsPermissionGranted || !uiState.smsEnabled || model.instance == null) return@DisposableEffect onDispose {}
+  DisposableEffect(smsPermissionGranted, smsEnabled, model.name) {
+    if (!smsPermissionGranted || !smsEnabled || model.instance == null) return@DisposableEffect onDispose {}
     val receiver = LedgerSmsReceiver { sender, body ->
-      val countBefore = captureEntryCount()
-      viewModel.sendSmsMessage(model, sender, body, onDone = { handleResponse(it, countBefore) }, onError = onError)
+      viewModel.sendSmsMessage(model, sender, body, onDone = { handleResponse(it) }, onError = onError)
     }
     val filter = IntentFilter(Telephony.Sms.Intents.SMS_RECEIVED_ACTION)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
@@ -372,8 +432,7 @@ private fun LedgerMainUi(
 
   val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
     if (success) cameraImageUri?.let { uri ->
-      val countBefore = captureEntryCount()
-      viewModel.sendImageMessage(model, uri, onDone = { handleResponse(it, countBefore) }, onError = onError)
+      viewModel.sendImageMessage(model, uri, onDone = { handleResponse(it) }, onError = onError)
     }
   }
   val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -386,16 +445,14 @@ private fun LedgerMainUi(
   }
   val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
     uri ?: return@rememberLauncherForActivityResult
-    val countBefore = captureEntryCount()
-    viewModel.sendImageMessage(model, uri, onDone = { handleResponse(it, countBefore) }, onError = onError)
+    viewModel.sendImageMessage(model, uri, onDone = { handleResponse(it) }, onError = onError)
   }
   val audioPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
     if (granted) showAudioPanel = true
   }
   val wavFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
     uri ?: return@rememberLauncherForActivityResult
-    val countBefore = captureEntryCount()
-    viewModel.sendWavFileMessage(model, uri, onDone = { handleResponse(it, countBefore) }, onError = onError)
+    viewModel.sendWavFileMessage(model, uri, onDone = { handleResponse(it) }, onError = onError)
   }
 
   LaunchedEffect(Unit) { viewModel.syncFromTools(ledgerTools) }
@@ -407,14 +464,14 @@ private fun LedgerMainUi(
   fun processText(text: String) {
     if (text.trim().isEmpty()) return
     inputText = ""
-    val countBefore = captureEntryCount()
-    viewModel.sendMessage(model, text, onDone = { handleResponse(it, countBefore, text) }, onError = onError)
+    // Sending any message resolves a pending clarification
+    if (uiState.clarificationPending) viewModel.setClarificationPending(false)
+    viewModel.sendMessage(model, text, onDone = { handleResponse(it, text) }, onError = onError)
   }
 
   fun processAudio(pcmBytes: ByteArray) {
     showAudioPanel = false
-    val countBefore = captureEntryCount()
-    viewModel.sendAudioMessage(model, pcmBytes, onDone = { handleResponse(it, countBefore) }, onError = onError)
+    viewModel.sendAudioMessage(model, pcmBytes, onDone = { handleResponse(it) }, onError = onError)
   }
 
   Box(modifier = Modifier.fillMaxSize()) {
@@ -458,37 +515,82 @@ private fun LedgerMainUi(
           },
         )
 
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val (fabLabel, fabIcon) = remember(currentHour) {
+          when (currentHour) {
+            in 6..10 -> "Restock" to Icons.Rounded.Inventory2
+            in 20..23, in 0..5 -> "Close Day" to Icons.Rounded.History
+            else -> "Quick Sale" to Icons.Rounded.Add
+          }
+        }
+        var showFabMenu by remember { mutableStateOf(false) }
+
+        @OptIn(ExperimentalFoundationApi::class)
         Box(modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)) {
           Box(
             modifier = Modifier
               .height(32.dp)
               .clip(RoundedCornerShape(12.dp))
               .background(Color.White.copy(alpha = 0.25f))
-              .clickable {
-                hapticManager.playTick()
-                processText("Give me 3 to 5 specific actionable recommendations to improve my business performance today.")
-              }
+              .combinedClickable(
+                onClick = {
+                  hapticManager.playTick()
+                  when (fabLabel) {
+                    "Close Day" -> showRitualSummary = true
+                    "Restock" -> inputText = "Restocked "
+                    else -> inputText = "Sold "
+                  }
+                },
+                onLongClick = { hapticManager.playTick(); showFabMenu = true },
+              )
               .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
           ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-              Icon(Icons.Rounded.Lightbulb, null, modifier = Modifier.size(14.dp), tint = Color.White)
-              Text("Recommendations", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
+              Icon(fabIcon, null, modifier = Modifier.size(14.dp), tint = Color.White)
+              Text(fabLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.White)
             }
           }
+          DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
+            DropdownMenuItem(
+              text = { Text("Quick Sale") },
+              leadingIcon = { Icon(Icons.Rounded.Add, null, modifier = Modifier.size(16.dp)) },
+              onClick = { showFabMenu = false; inputText = "Sold " },
+            )
+            DropdownMenuItem(
+              text = { Text("Restock") },
+              leadingIcon = { Icon(Icons.Rounded.Inventory2, null, modifier = Modifier.size(16.dp)) },
+              onClick = { showFabMenu = false; inputText = "Restocked " },
+            )
+            DropdownMenuItem(
+              text = { Text("Close Day") },
+              leadingIcon = { Icon(Icons.Rounded.History, null, modifier = Modifier.size(16.dp)) },
+              onClick = { showFabMenu = false; showRitualSummary = true },
+            )
+          }
         }
+      }
+
+      if (showRitualSummary) {
+        com.ledger.app.ui.common.RitualSummaryDialog(
+          onDismiss = { showRitualSummary = false },
+          onShare = { showRitualSummary = false; exportAndShare() },
+          revenue = "${uiState.selectedCurrency} ${formatAmount(uiState.revenue)}",
+          profit = "${uiState.selectedCurrency} ${formatAmount(uiState.netProfit)}",
+          txCount = uiState.transactionCount
+        )
       }
 
       if (showDebugOverlay && BuildConfig.DEBUG) {
         AlertDialog(
           onDismissRequest = { showDebugOverlay = false },
-          title = { Text("Debug — Last response", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) },
+          title = { Text("Debug — Last inference", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) },
           text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              Text("Last agent message:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+              Text("Raw JSON response:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
               Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Text(
-                  uiState.messages.filterIsInstance<ChatMessageText>().lastOrNull { it.side == ChatSide.AGENT }?.content ?: "No inference yet.",
+                  uiState.lastRawJson.ifBlank { "No inference yet." },
                   style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                   modifier = Modifier.padding(10.dp),
                 )
@@ -496,6 +598,36 @@ private fun LedgerMainUi(
             }
           },
           confirmButton = { TextButton(onClick = { showDebugOverlay = false }) { Text("Close") } },
+        )
+      }
+
+      // ── Control chips ─────────────────────────────────────────────────────
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+      ) {
+        val validationLabel = when (uiState.validationMode) {
+          "all" -> "Validate: All"
+          "critical" -> "Validate: Low conf."
+          else -> "Validate: Off"
+        }
+        FilterChip(
+          selected = uiState.validationMode != "none",
+          onClick = { viewModel.saveValidationMode(when (uiState.validationMode) { "none" -> "critical"; "critical" -> "all"; else -> "none" }) },
+          label = { Text(validationLabel, style = MaterialTheme.typography.labelSmall) },
+          leadingIcon = { Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(14.dp)) },
+        )
+        FilterChip(
+          selected = smsPermissionGranted && smsEnabled,
+          onClick = {
+            when {
+              !smsPermissionGranted -> smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS)
+              smsEnabled -> smsEnabled = false
+              else -> smsEnabled = true
+            }
+          },
+          label = { Text(if (smsPermissionGranted && smsEnabled) "SMS: Active" else "SMS: Off", style = MaterialTheme.typography.labelSmall) },
+          leadingIcon = { Icon(Icons.Rounded.Sms, null, modifier = Modifier.size(14.dp)) },
         )
       }
 
@@ -513,6 +645,10 @@ private fun LedgerMainUi(
             is ChatMessageText -> ChatBubble(message = message, onDelete = {
               viewModel.addMessage(ChatMessageWarning("Message removed"))
             })
+            is ChatMessageClarification -> ClarificationBubble(
+              message = message,
+              onSkip = { viewModel.setClarificationPending(false) },
+            )
             is ChatMessageWarning -> Box(
               modifier = Modifier.fillMaxWidth(),
               contentAlignment = Alignment.Center,
@@ -718,13 +854,12 @@ private fun HeroBalanceCard(
     shape = RoundedCornerShape(24.dp),
     elevation = CardDefaults.elevatedCardElevation(defaultElevation = 3.dp),
   ) {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     Box(
       modifier = Modifier.fillMaxWidth().background(
         Brush.linearGradient(
           colors = listOf(
-            if (isDark) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary,
-            if (isDark) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.tertiary,
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.tertiary,
           )
         )
       )
@@ -847,6 +982,51 @@ private fun HeroBalanceCard(
 // ── Chat composables ──────────────────────────────────────────────────────────
 
 @Composable
+private fun ClarificationBubble(message: ChatMessageClarification, onSkip: () -> Unit) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+    horizontalArrangement = Arrangement.Start,
+  ) {
+    ElevatedCard(
+      modifier = Modifier.widthIn(max = 300.dp),
+      colors = CardDefaults.elevatedCardColors(
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+      ),
+      shape = RoundedCornerShape(4.dp, 16.dp, 16.dp, 16.dp),
+    ) {
+      Column(modifier = Modifier.padding(12.dp, 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+          Icon(
+            Icons.Rounded.Warning,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+          )
+          Text(
+            "Need a detail",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+          )
+        }
+        Text(
+          message.question,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        TextButton(
+          onClick = onSkip,
+          modifier = Modifier.align(Alignment.End).height(28.dp),
+          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        ) {
+          Text("Skip", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f))
+        }
+      }
+    }
+  }
+}
+
+@Composable
 private fun ChatBubble(message: ChatMessageText, onDelete: () -> Unit) {
   val isUser = message.side == ChatSide.USER
   var showMenu by remember { mutableStateOf(false) }
@@ -898,21 +1078,13 @@ private fun ChatBubble(message: ChatMessageText, onDelete: () -> Unit) {
             ),
           elevation = CardDefaults.cardElevation(defaultElevation = if (isUser) 2.dp else 0.dp),
         ) {
-          if (isUser) {
-            Text(
-              text = message.content,
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-              color = MaterialTheme.colorScheme.onPrimary,
-              style = MaterialTheme.typography.bodyMedium,
-            )
-          } else {
-            MarkdownText(
-              text = message.content,
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-              color = MaterialTheme.colorScheme.onSurface,
-              style = MaterialTheme.typography.bodyMedium,
-            )
-          }
+          Text(
+            text = message.content,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            color = if (isUser) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyMedium,
+          )
         }
 
         if (!isUser) {
@@ -937,53 +1109,6 @@ private fun ChatBubble(message: ChatMessageText, onDelete: () -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
       )
-    }
-  }
-}
-
-@Composable
-private fun MarkdownText(
-  text: String,
-  color: androidx.compose.ui.graphics.Color,
-  style: androidx.compose.ui.text.TextStyle,
-  modifier: Modifier = Modifier,
-) {
-  // Renders **bold**, *italic*, and gives numbered/bullet list items a top spacing
-  val paragraphs = text.split("\n")
-  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(0.dp)) {
-    paragraphs.forEachIndexed { index, line ->
-      val isListItem = line.trimStart().matches(Regex("^(\\d+\\.|[-•*]).*"))
-      val topPad = if (isListItem && index > 0) 6.dp else 2.dp
-      val annotated = buildAnnotatedString {
-        var i = 0
-        while (i < line.length) {
-          when {
-            line.startsWith("**", i) -> {
-              val end = line.indexOf("**", i + 2)
-              if (end != -1) {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(line.substring(i + 2, end)) }
-                i = end + 2
-              } else { append(line[i++]) }
-            }
-            line.startsWith("*", i) && !line.startsWith("**", i) -> {
-              val end = line.indexOf("*", i + 1)
-              if (end != -1) {
-                withStyle(SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)) { append(line.substring(i + 1, end)) }
-                i = end + 1
-              } else { append(line[i++]) }
-            }
-            else -> append(line[i++])
-          }
-        }
-      }
-      if (annotated.isNotEmpty()) {
-        Text(
-          text = annotated,
-          color = color,
-          style = style,
-          modifier = Modifier.padding(top = topPad),
-        )
-      }
     }
   }
 }
@@ -1035,61 +1160,163 @@ private fun ChatEmptyState() {
   }
 }
 
-// ── Post-transaction confirm dialog ──────────────────────────────────────────
+// ── Confirm dialog ────────────────────────────────────────────────────────────
+
+data class PendingTransaction(
+  val item: String,
+  val amount: Double,
+  val currency: String,
+  val transactionType: String,
+  val cost: Double,
+  val quantity: Double,
+  val unit: String,
+  val confidence: String,
+  val timestampMs: Long = System.currentTimeMillis(),
+  // Stock deltas attached to this transaction — applied only when transaction is committed
+  val stockDeltas: List<Triple<String, Double, String>> = emptyList(),
+)
 
 @Composable
-private fun NewEntriesConfirmDialog(
-  entries: List<LedgerEntry>,
-  onKeep: () -> Unit,
-  onUndo: () -> Unit,
+private fun ConfirmTransactionsDialog(
+  transactions: List<PendingTransaction>,
+  onConfirm: () -> Unit,
+  onDismiss: () -> Unit,
 ) {
   AlertDialog(
-    onDismissRequest = onKeep,
+    onDismissRequest = onDismiss,
     title = {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Rounded.Warning, null, tint = Color(0xFFE65100), modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text(if (entries.size == 1) "Verify transaction" else "Verify ${entries.size} transactions")
+        Text(if (transactions.size == 1) "Confirm Transaction" else "Confirm ${transactions.size} Transactions")
       }
     },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          "Is the amount correct? Keep to confirm or Undo to correct it.",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        entries.forEach { entry ->
+        Text("Low-confidence extraction — please verify:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        transactions.forEach { tx ->
           Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(entry.item, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Text(
-                  entry.confidence,
-                  style = MaterialTheme.typography.labelSmall,
-                  color = when (entry.confidence) {
-                    "low" -> Color(0xFFC62828); "medium" -> Color(0xFFE65100); else -> Color(0xFF2E7D32)
-                  },
-                  fontWeight = FontWeight.Bold,
-                )
+                Text(tx.item, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(tx.confidence, style = MaterialTheme.typography.labelSmall, color = when (tx.confidence) { "low" -> Color(0xFFC62828); "medium" -> Color(0xFFE65100); else -> Color(0xFF2E7D32) }, fontWeight = FontWeight.Bold)
               }
-              Text(
-                "${entry.transactionType}  ·  ${entry.currency} ${formatAmount(entry.amount)}  ·  ${fmtQty(entry.quantity)} ${entry.unit}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+              Text("${tx.transactionType}  ·  ${tx.currency} ${formatAmount(tx.amount)}  ·  ${fmtQty(tx.quantity)} ${tx.unit}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
           }
         }
       }
     },
-    dismissButton = { TextButton(onClick = onUndo) { Text("Undo") } },
-    confirmButton = {
-      Button(onClick = onKeep, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) {
-        Text("Keep")
-      }
-    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Discard") } },
+    confirmButton = { Button(onClick = onConfirm, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) { Text("Save") } },
   )
+}
+
+// ── JSON parsing ──────────────────────────────────────────────────────────────
+
+sealed class ParseResult {
+  data class Transactions(val list: List<PendingTransaction>, val message: String) : ParseResult()
+  data class ClarificationNeeded(val question: String) : ParseResult()
+  object Empty : ParseResult()
+}
+
+private fun parseResponse(jsonStr: String, tools: LedgerTools, defaultCurrency: String): ParseResult {
+  return try {
+    val start = jsonStr.indexOf('{'); val end = jsonStr.lastIndexOf('}')
+    if (start == -1 || end == -1 || end <= start) return ParseResult.Empty
+    val json = JSONObject(jsonStr.substring(start, end + 1))
+    val action = json.optString("action", "unknown")
+
+    if (action == "clarify") {
+      val question = json.optString("question", "").ifBlank { "Could you provide more details?" }
+      return ParseResult.ClarificationNeeded(question)
+    }
+
+    if (action == "get_health") {
+      val health = tools.getFinancialHealth()
+      val rev = (health["total_revenue"] as? Double) ?: 0.0
+      val cost = (health["total_cost"] as? Double) ?: 0.0
+      val profit = (health["net_profit"] as? Double) ?: 0.0
+      val count = (health["transaction_count"] as? Int) ?: 0
+      @Suppress("UNCHECKED_CAST")
+      val stockItems = health["stock_items"] as? List<Map<String, Any>> ?: emptyList()
+      val summary = if (count == 0) {
+        "No transactions recorded yet. Tell me what you sold or spent today to get started."
+      } else {
+        val profitLabel = if (profit >= 0) "Net profit" else "Net loss"
+        val lines = mutableListOf(
+          "$count transaction${if (count != 1) "s" else ""} today",
+          "Revenue: $defaultCurrency ${formatAmount(rev)}",
+          "Costs: $defaultCurrency ${formatAmount(cost)}",
+          "$profitLabel: $defaultCurrency ${formatAmount(Math.abs(profit))}",
+        )
+        if (stockItems.isNotEmpty()) {
+          val stockSummary = stockItems.take(5).joinToString(", ") { item ->
+            val qty = item["quantity"] as? Double ?: 0.0
+            val unit = item["unit"] as? String ?: ""
+            val name = item["item"] as? String ?: ""
+            "${fmtQty(qty)} $unit $name"
+          }
+          lines.add("Stock: $stockSummary")
+        }
+        lines.joinToString("  ·  ")
+      }
+      return ParseResult.Transactions(emptyList(), summary)
+    }
+
+    val stockUpdatesArr = json.optJSONArray("stock_updates")
+    val stockDeltaList: List<Triple<String, Double, String>> = buildList {
+      if (stockUpdatesArr != null) {
+        for (i in 0 until stockUpdatesArr.length()) {
+          val upd = stockUpdatesArr.getJSONObject(i)
+          add(Triple(upd.optString("item", "item"), upd.optDouble("quantity_delta", 0.0), upd.optString("unit", "unit")))
+        }
+      }
+    }
+    // For pure stock actions, apply immediately. For add_transaction, defer to commitTransaction
+    // so that stock is only updated if the user actually confirms the transaction.
+    if (action != "add_transaction") {
+      stockDeltaList.forEach { (item, delta, unit) -> tools.updateStock(item, delta, unit) }
+    }
+    val message = json.optString("message", "Done.")
+    val transactions = json.optJSONArray("transactions")
+    val list = if (action == "add_transaction" && transactions != null)
+      (0 until transactions.length()).mapIndexed { i, _ ->
+        val tx = transactions.getJSONObject(i)
+        PendingTransaction(
+          item = tx.optString("item", "item"),
+          amount = tx.optDouble("amount", 0.0),
+          currency = tx.optString("currency", defaultCurrency),
+          transactionType = tx.optString("transaction_type", "sale"),
+          cost = tx.optDouble("cost", 0.0),
+          quantity = tx.optDouble("quantity", 1.0),
+          unit = tx.optString("unit", "unit"),
+          confidence = tx.optString("confidence", "high"),
+          // Attach stock deltas to first transaction only; combined responses have one tx per stock update
+          stockDeltas = if (i == 0) stockDeltaList else emptyList(),
+        )
+      }
+    else emptyList()
+    ParseResult.Transactions(list, message)
+  } catch (e: Exception) {
+    Log.w(TAG, "JSON parse failed: ${e.message}")
+    ParseResult.Empty
+  }
+}
+
+private fun commitTransaction(tx: PendingTransaction, tools: LedgerTools) {
+  tools.addTransaction(tx.item, tx.amount, tx.currency, tx.transactionType, tx.cost, tx.quantity, tx.unit, tx.confidence)
+  // Fall back to the transaction's own qty/unit when the model omits stock_updates:
+  //   sale     → decrement stock (negative delta)
+  //   purchase/expense → increment stock (positive delta)
+  //   income   → no stock change (cash received, no physical goods)
+  val deltas = when {
+    tx.stockDeltas.isNotEmpty() -> tx.stockDeltas
+    tx.transactionType == "sale" -> listOf(Triple(tx.item, -tx.quantity, tx.unit))
+    tx.transactionType != "income" -> listOf(Triple(tx.item, tx.quantity, tx.unit))
+    else -> emptyList()
+  }
+  deltas.forEach { (item, delta, unit) -> tools.updateStock(item, delta, unit) }
 }
 
 // ── Formatters ────────────────────────────────────────────────────────────────

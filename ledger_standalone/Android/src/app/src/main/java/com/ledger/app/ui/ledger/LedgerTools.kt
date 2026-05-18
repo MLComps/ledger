@@ -71,7 +71,7 @@ class LedgerTools(
     @ToolParam(description = "Cost of goods (0 if not applicable)") cost: Double = 0.0,
     @ToolParam(description = "Quantity") quantity: Double = 1.0,
     @ToolParam(description = "Unit e.g. kg, pieces, sack") unit: String = "unit",
-    @ToolParam(description = "Confidence: high (amount stated), medium (computed), low (vague item)") confidence: String = "high",
+    confidence: String = "high",
   ): Map<String, Any> {
     Log.d(TAG, "addTransaction: item=$item amount=$amount currency=$currency type=$transactionType confidence=$confidence")
     val ts = System.currentTimeMillis()
@@ -88,13 +88,6 @@ class LedgerTools(
         timestampMs = ts,
       )
     entries.add(entry)
-
-    // Auto-update stock: sales reduce inventory, purchases/expenses add to it
-    val type = transactionType.lowercase()
-    when {
-      type == "sale" -> updateStock(item, -quantity, unit)
-      type == "purchase" || type == "expense" -> updateStock(item, quantity, unit)
-    }
 
     // Persist to Room asynchronously
     coroutineScope?.launch {
